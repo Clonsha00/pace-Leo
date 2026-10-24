@@ -12,6 +12,7 @@
 
 constexpr int RED_LED_PIN=10;
 constexpr unsigned long SAMPLE_MS=20, ARM_MS=300, READY_MS=5000, RESULT_MS=20000;
+constexpr unsigned long SYNC_FRESH_MS=12000;
 constexpr float START_DELTA_G=.90f, MIN_PEAK_G=2.20f, MIN_SCORE=.07f, MIN_GYRO=250;
 enum Phase { OFFLINE, IDLE, FOUND, RELEASE_BUTTON, SETTLING, READY, SWING,
              SENDING, WAIT_RESULT, CAUGHT, ESCAPED, WEAK, ARM_TIMEOUT,
@@ -49,7 +50,7 @@ void handleReply(const NetReply& reply);
 void setPhase(Phase value) { if(phase!=value){phaseAt=millis();phase=value;} }
 bool waiting() { return phase==SENDING||phase==WAIT_RESULT; }
 void cancelGesture() { armed=false;recording=false;released=false;settled=false; }
-bool freshBuddy() { return online&&clockReady&&transportReady&&buddy&&millis()-lastSync<12000; }
+bool freshBuddy() { return online&&clockReady&&transportReady&&buddy&&millis()-lastSync<SYNC_FRESH_MS; }
 void clearRound() {
   revision++;pendingSequence=0;cancelGesture();
   peakG=score=peakGyro=0;strcpy(lastResult,"--");caughtId[0]=0;
@@ -147,14 +148,20 @@ void handleReply(const NetReply& r) {
     return;
   }
   if(!r.wifi||!r.clockReady||r.code!=200||!r.protocol){
+    const bool hardError=r.code==401||r.code==403||r.code==404||r.code==-1001||(r.code==200&&!r.protocol);
+    // One missed HTTPS poll is not a Wi-Fi disconnect. Keep the last authenticated
+    // snapshot only within its existing freshness window; failures never refresh it.
+    Serial.printf("[sync] HTTP=%d wifi=%d age=%lu ms\n",r.code,r.wifi,millis()-lastSync);
+    if(!hardError&&r.wifi&&r.clockReady&&transportReady&&millis()-lastSync<SYNC_FRESH_MS)return;
     transportReady=false;
-    if(r.code==401||r.code==404||(r.code==200&&!r.protocol)){
+    if(hardError){
       if(waiting())revision++;
-      pendingSequence=0;cancelGesture();setPhase(r.code==401?AUTH_ERROR:UPDATE_API);return;
+      pendingSequence=0;cancelGesture();setPhase(r.code==401||r.code==403?AUTH_ERROR:UPDATE_API);return;
     }
     if(!waiting()){cancelGesture();setPhase(r.code==404||r.code==200?UPDATE_API:!r.wifi?OFFLINE:SYNC_ERROR);}
     return;
   }
+  if(!transportReady)Serial.println("[sync] authenticated cloud connection ready");
   lastSync=millis();transportReady=true;
   // ID, not a presence edge, defines a new buddy. Old result replies cannot affect it.
   if(r.active&&strcmp(buddyId,r.encounter)!=0){
@@ -164,7 +171,7 @@ void handleReply(const NetReply& r) {
     if(!buddy){
       if(armed){cancelGesture();setPhase(IDLE);}
       else if(!waiting()&&phase!=CAUGHT&&phase!=RESULT_TIMEOUT)setPhase(IDLE);
-    }else if(phase==OFFLINE||phase==SYNC_ERROR||phase==UPDATE_API||phase==IDLE)setPhase(FOUND);
+    }else if(phase==OFFLINE||phase==SYNC_ERROR||phase==UPDATE_API||phase==AUTH_ERROR||phase==IDLE)setPhase(FOUND);
   }
   if(phase==WAIT_RESULT&&r.sequence==pendingSequence&&r.revision==revision){
     if(strcmp(r.result,"success")==0){strcpy(lastResult,"Captured");snprintf(caughtId,sizeof(caughtId),"%s",buddyId);buddy=false;pendingSequence=0;setPhase(CAUGHT);}
@@ -183,7 +190,7 @@ void completeGesture(unsigned long now) {
   if(xQueueSend(jobs,&job,0)!=pdTRUE)setPhase(SEND_ERROR);
 }
 
-// V2.7: native pixel graphics; diagnostics stay off the play screen.
+// V2.8: native pixel graphics; diagnostics stay off the play screen.
 bool visualError() {
   return phase==OFFLINE||phase==RESULT_TIMEOUT||phase==SYNC_ERROR||phase==SEND_ERROR||
     phase==IMU_ERROR||phase==UPDATE_API||phase==INIT_ERROR||phase==AUTH_ERROR;
@@ -197,7 +204,7 @@ void star(int x,int y,int size,uint16_t color) {
 void drawScreen(unsigned long now) {
   if(!screenReady){M5.Lcd.fillScreen(BLACK);M5.Lcd.setCursor(62,112);M5.Lcd.print("!");return;}
   const uint16_t bg=0x0842,ink=0x0000,red=0xE904,white=0xEF5D;
-  const bool connected=online&&clockReady&&transportReady&&now-lastSync<12000;
+  const bool connected=online&&clockReady&&transportReady&&now-lastSync<SYNC_FRESH_MS;
   const unsigned long age=now-phaseAt;
   const bool preparing=phase==RELEASE_BUTTON||phase==SETTLING||phase==READY||phase==SWING;
   const bool shaking=waiting()&&connected;
@@ -270,8 +277,8 @@ void loop() {
   if(phase==ESCAPED&&now-phaseAt>=900)setPhase(freshBuddy()?FOUND:IDLE);
   if((phase==WEAK||phase==ARM_TIMEOUT)&&now-phaseAt>=900)setPhase(freshBuddy()?FOUND:IDLE);
   if(waiting()&&now-phaseAt>=RESULT_MS){revision++;pendingSequence=0;setPhase(RESULT_TIMEOUT);}
-  if(transportReady&&now-lastSync>=12000){transportReady=false;cancelGesture();if(!waiting())setPhase(SYNC_ERROR);}
-  feedbackConnected=online&&clockReady&&transportReady&&now-lastSync<12000;
+  if(transportReady&&now-lastSync>=SYNC_FRESH_MS){transportReady=false;cancelGesture();if(!waiting())setPhase(SYNC_ERROR);}
+  feedbackConnected=online&&clockReady&&transportReady&&now-lastSync<SYNC_FRESH_MS;
   bool down=M5.BtnA.isPressed();
   if(down&&!previousDown&&!armed&&!waiting()&&jobs&&freshBuddy()&&phase!=CAUGHT&&phase!=ESCAPED&&now-lastThrow>=1000){
     cancelGesture();pressedAt=now;armed=true;peakG=score=peakGyro=0;stillMs=strongMs=quietMs=0;

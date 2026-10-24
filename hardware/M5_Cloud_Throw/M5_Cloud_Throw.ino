@@ -77,9 +77,12 @@ void deliver(const NetReply& reply) {
   xQueueSend(replies,&current,pdMS_TO_TICKS(50));
 }
 
-// V2.9: only this task owns the authenticated TLS WebSocket.
+// V2.11: only this task owns the authenticated TLS WebSocket.
 void networkTask(void*) {
-  WebSocketsClient ws;
+  // WebSockets 2.7.2 leaves _client_cert/_client_key uninitialized in its
+  // constructor/begin(). Static storage zeros those optional TLS pointers before
+  // construction; an automatic task-stack object can pass garbage to mbedTLS.
+  static WebSocketsClient ws;
   unsigned long pending=0,pendingRevision=0,lastHeartbeat=0,postAt=0;
   unsigned int command=0;
   bool authenticated=false,started=false,awaitingAck=false;
@@ -127,11 +130,11 @@ void networkTask(void*) {
       }
     }
   });
-  ws.setReconnectInterval(1500);ws.enableHeartbeat(10000,3000,2);
+  ws.setReconnectInterval(1500);
   for(;;){
     const bool wifi=WiFi.status()==WL_CONNECTED,clock=time(nullptr)>1700000000;
     if(wifi&&clock){
-      if(!started){ws.beginSslWithCA(host.c_str(),443,"/api/socket",PACE_ROOT_CA,"");started=true;}
+      if(!started){ws.beginSslWithCA(host.c_str(),443,"/api/socket",PACE_ROOT_CA,"");ws.enableHeartbeat(10000,3000,2);started=true;}
       ws.loop();
     }else{
       if(started){ws.disconnect();started=false;authenticated=false;}
@@ -299,7 +302,7 @@ void drawScreen(unsigned long now) {
 
 void setup() {
   M5.begin();Serial.begin(115200);
-  Serial.printf("[boot] firmware=2.10 reset_reason=%d heap=%u\n",(int)esp_reset_reason(),ESP.getFreeHeap());
+  Serial.printf("[boot] firmware=2.11 reset_reason=%d heap=%u\n",(int)esp_reset_reason(),ESP.getFreeHeap());
   M5.Imu.Init();M5.Lcd.setRotation(0);
   screen.setColorDepth(16);screenPixels=static_cast<uint16_t*>(screen.createSprite(135,240));screenReady=screenPixels!=nullptr;
   pinMode(RED_LED_PIN,OUTPUT);digitalWrite(RED_LED_PIN,HIGH);

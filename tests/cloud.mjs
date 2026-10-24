@@ -38,4 +38,15 @@ assert.equal((await worker.fetch(req('/api/result',{sequence:2,success:false}),e
 assert.equal((await worker.fetch(req('/api/throw',{event:'throw',padding:'x'.repeat(1100)}),env)).status,413);
 assert.equal((await worker.fetch(req('/api/missing'),env)).status,404);
 assert.equal((await worker.fetch(req('/api/last',{}),env)).status,405);
+assert.equal(await (await worker.fetch(req('/api/encounter'),env)).text(),'none');
+assert.equal((await worker.fetch(req('/api/encounter',{id:'test-1',active:true}),env)).status,200);
+assert.equal(await (await worker.fetch(req('/api/encounter'),env)).text(),'present');
+assert.equal((await worker.fetch(req('/api/encounter',{id:'test-1',active:false}),env)).status,200);
+assert.equal(await (await worker.fetch(req('/api/encounter'),env)).text(),'none');
+assert.equal((await worker.fetch(req('/api/encounter',{id:'test-1',active:true}),env)).status,409);
+await worker.fetch(req('/api/encounter',{id:'test-2',active:true}),env);
+await worker.fetch(req('/api/encounter',{id:'test-1',active:false}),env);
+assert.equal(await (await worker.fetch(req('/api/encounter'),env)).text(),'present');
+memory.get('encounter').updated-=46000;
+assert.equal(await (await worker.fetch(req('/api/encounter'),env)).text(),'none');
 console.log('Cloud auth, request limits, metrics, rate limit, persistent sequence and relay response passed.');

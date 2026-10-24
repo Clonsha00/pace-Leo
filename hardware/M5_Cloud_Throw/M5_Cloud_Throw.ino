@@ -36,6 +36,9 @@ constexpr int RED_LED_PIN = 10;
 volatile int ledMode = 0; // 0 off, 1 waiting/blink, 2 captured/solid
 bool waitingResult = false;
 unsigned long pendingSequence = 0, waitingSince = 0, lastResultPoll = 0;
+bool buddyPresent=false;
+unsigned long lastEncounterPoll=0;
+String buddyText="Waiting for phone";
 
 void ledTask(void*) {
   for (;;) {
@@ -52,6 +55,28 @@ String resultUrl() {
   return url.substring(0, suffix) + "/api/result?sequence=" + String(pendingSequence);
 }
 
+void checkEncounter() {
+  // Never stall IMU sampling while preparing or recording a gesture.
+  if (armed || recording || waitingResult || millis()-lastEncounterPoll<2000) return;
+  lastEncounterPoll=millis();
+  if (WiFi.status()!=WL_CONNECTED || time(nullptr)<1700000000) { buddyText="Not connected"; return; }
+  String url(SERVER_URL); const int suffix=url.indexOf("/api/throw");
+  if (suffix<0) { buddyText="Check server URL"; return; }
+  url=url.substring(0,suffix)+"/api/encounter";
+  WiFiClientSecure client;client.setCACert(PACE_ROOT_CA);
+  HTTPClient http;http.setTimeout(4000);
+  if(!http.begin(client,url))return;
+  http.addHeader("Authorization",String("Bearer ")+RELAY_TOKEN);
+  const int code=http.GET();
+  String value=code==200?http.getString():String("");value.trim();http.end();
+  if(code!=200){buddyText="Sync error "+String(code);return;}
+  const bool present=value=="present";
+  if(value!="present" && value!="none"){buddyText="Update cloud API";return;}
+  if(present&&!buddyPresent&&ledMode!=2&&!(statusText=="CAPTURE FAILED"))statusText="BUDDY APPEARED!";
+  else if(!present&&buddyPresent&&statusText=="BUDDY APPEARED!")statusText="WAIT FOR BUDDY";
+  buddyPresent=present;buddyText=present?"BUDDY IS HERE":"No buddy nearby";
+}
+
 void checkResult() {
   if (!waitingResult) return;
   const unsigned long now = millis();
@@ -61,12 +86,14 @@ void checkResult() {
   if (now-lastResultPoll < 1000 || WiFi.status()!=WL_CONNECTED) return;
   lastResultPoll=now;
   WiFiClientSecure client; client.setCACert(PACE_ROOT_CA);
-  HTTPClient http; http.setTimeout(2000);
+  HTTPClient http; http.setTimeout(4000);
   String url=resultUrl();
   if (!url.length() || !http.begin(client,url)) return;
   http.addHeader("Authorization",String("Bearer ")+RELAY_TOKEN);
   const int code=http.GET();
   String result=code==200?http.getString():String(""); result.trim();
+  Serial.printf("Result #%lu: HTTP %d %s\n",pendingSequence,code,result.c_str());
+  networkText=code==200?"Result: "+result:"Result HTTP "+String(code);
   http.end();
   if (millis()-waitingSince >= 20000) {
     waitingResult=false; ledMode=0; statusText="RESULT TIMEOUT"; return;
@@ -74,7 +101,7 @@ void checkResult() {
   if (result=="success" || result=="failure" || result=="stale") {
     waitingResult=false;
     ledMode=result=="success"?2:0;
-    statusText=result=="success"?"CAUGHT!":result=="failure"?"ESCAPED: TAP A":"STALE: TAP A";
+    statusText=result=="success"?"CAPTURE SUCCESS!":result=="failure"?"CAPTURE FAILED":"STALE: TAP A";
   }
 }
 
@@ -136,7 +163,7 @@ void setup() {
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   configTime(0, 0, "pool.ntp.org", "time.google.com");
-  Serial.println("PACE cloud v2.4: blinking=waiting, solid=caught; tap A to start next throw.");
+  Serial.println("PACE cloud v2.5: buddy arrival and capture outcome displayed on M5.");
 }
 void loop() {
   M5.update();
@@ -208,14 +235,15 @@ void loop() {
   if (now - lastDraw >= 150) {
     lastDraw=now;
     M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(4,4); M5.Lcd.printf("PACE CLOUD V2.4   ");
+    M5.Lcd.setCursor(4,4); M5.Lcd.printf("PACE CLOUD V2.5   ");
     M5.Lcd.setCursor(4,32); M5.Lcd.printf("%-19s",statusText.c_str());
-    M5.Lcd.setCursor(4,60); M5.Lcd.printf("Throws:%-8u",throws);
-    M5.Lcd.setCursor(4,85); M5.Lcd.printf("Peak:%4.2fg        ",peakG);
+    M5.Lcd.setCursor(4,60); M5.Lcd.printf("%-19s",buddyText.c_str());
     M5.Lcd.setTextSize(1);
+    M5.Lcd.setCursor(4,90); M5.Lcd.printf("Throws:%u Peak:%.2fg           ",throws,peakG);
     M5.Lcd.setCursor(4,112); M5.Lcd.printf("WiFi:%s    ",WiFi.status()==WL_CONNECTED?"OK":"OFF");
     M5.Lcd.setCursor(4,125); M5.Lcd.printf("%-28s",networkText.c_str());
   }
   checkResult();
+  checkEncounter();
   delay(2);
 }

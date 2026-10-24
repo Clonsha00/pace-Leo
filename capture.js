@@ -3,6 +3,19 @@
   const el=id=>document.getElementById(id),game=new CaptureGame(),key='pace-companions-v1';
   const distanceTest=new CaptureGame();let testMeters=0;
   let collection=[],enabled=false,controller=null,connectionEpoch=null,sequence=null,cloudMode=false;
+  let encounterId=null,lastEncounterSync=0,syncQueue=Promise.resolve(),encounterCounter=0;
+  function notifyEncounter(active){
+    if(!enabled||!cloudMode||(!encounterId&&!active))return;
+    if(active&&!encounterId)encounterId=globalThis.crypto?.randomUUID?.()||Date.now()+'-'+(++encounterCounter);
+    const id=encounterId,token=el('relayToken').value.trim();lastEncounterSync=Date.now();
+    if(!active)encounterId=null;
+    syncQueue=syncQueue.catch(()=>{}).then(async()=>{
+      try{
+        const r=await fetch('/api/encounter',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id,active}),signal:AbortSignal.timeout(4000)});
+        if(!r.ok)throw Error('HTTP '+r.status);
+      }catch{status('M5 遭遇狀態同步失敗；請保持網頁前景並確認雲端連線。');}
+    });
+  }
   try{el('relayToken').value=sessionStorage.getItem('pace-relay-token')||'';}catch{}
   try{const v=JSON.parse(localStorage.getItem(key)||'[]');if(Array.isArray(v))collection=v.filter(x=>x&&typeof x.demo==='boolean');}catch{}
   function renderCollection(){el('companionCount').textContent=String(collection.filter(x=>!x.demo).length);el('demoCompanionCount').textContent=String(collection.filter(x=>x.demo).length);}
@@ -14,9 +27,10 @@
     el('captureSprite').textContent='🐾';el('captureThrow').disabled=false;el('captureClose').disabled=false;
     el('captureDialog').showModal();
     el('captureSignal').textContent=el('m5Status').textContent;
+    notifyEncounter(true);
   }
   window.PaceCapture={progress(s){if(game.progress(s))show();}};
-  function close(){game.close();el('captureDialog').close();}
+  function close(){notifyEncounter(false);game.close();el('captureDialog').close();}
   el('captureClose').onclick=close;
   el('captureDialog').addEventListener('cancel',e=>{e.preventDefault();close();});
   el('testEncounter').onclick=()=>{
@@ -48,6 +62,7 @@
       if(feedbackToken)reportResult(eventSequence,result.success,feedbackToken);
       el('captureClose').disabled=false;
       if(result.success){
+        notifyEncounter(false);
         collection.push({species:'trail-buddy',name:'步道小夥伴',at:new Date().toISOString(),demo:result.demo});
         let saved=true;try{localStorage.setItem(key,JSON.stringify(collection));}catch{saved=false;}
         renderCollection();el('captureSprite').textContent='✨';
@@ -59,7 +74,7 @@
     for(let attempt=0;attempt<3;attempt++){
       try{
         const r=await fetch('/api/result',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sequence:eventSequence,success}),signal:AbortSignal.timeout(4000)});
-        if(r.ok)return;
+        if(r.ok){status(`第 ${eventSequence} 球結果已回傳 M5：${success?'捕捉成功':'捕捉失敗'}。`);return;}
         if(r.status<500)break;
       }catch{}
       if(attempt<2)await new Promise(resolve=>setTimeout(resolve,500));
@@ -79,6 +94,7 @@
       if(cloudMode&&el('relayToken').value.trim().length<32){status('請先填入 Cloudflare 設定的連線金鑰（至少 32 字元）。');return;}
       try{sessionStorage.setItem('pace-relay-token',el('relayToken').value.trim());}catch{}
     }
+    if(enabled)notifyEncounter(false);
     enabled=!enabled;sequence=null;connectionEpoch=null;controller?.abort();
     el('m5Connect').textContent=enabled?'中斷 M5 接收':'連接 M5 接收服務';
     status(enabled?(cloudMode?'正在連接雲端接收服務…':'正在連接電腦接收服務…'):'尚未連接；可先用模擬投球測試。');
@@ -93,6 +109,7 @@
         if(!r.ok){if(r.status===401){enabled=false;el('m5Connect').textContent='連接 M5 接收服務';status('連線金鑰不正確，請確認與 Cloudflare RELAY_TOKEN 相同。');return;}throw Error('接收服務 HTTP '+r.status);}
         const d=await r.json();if(!Number.isInteger(d.sequence)||typeof d.boot!=='string')throw Error('請使用整合版接收服務');
         if(!enabled)return;
+        if(cloudMode&&game.encounter&&(!encounterId||Date.now()-lastEncounterSync>15000))notifyEncounter(true);
         if(connectionEpoch!==d.boot||sequence===null||d.sequence<sequence){connectionEpoch=d.boot;sequence=d.sequence;status(`已連接，事件序號 ${sequence}；現在可用 M5 投球。`);return;}
         if(d.sequence>sequence){
           sequence=d.sequence;

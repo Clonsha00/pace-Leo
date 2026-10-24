@@ -31,7 +31,12 @@ bool buddy=false,online=false,clockReady=false,transportReady=false;
 bool deviceReady=false;
 char buddyId[81]="",caughtId[81]="",lastResult[20]="--";
 unsigned long revision=0,pendingSequence=0,pressedAt=0,beganAt=0;
-unsigned long lastSample=0,lastDraw=0,lastSync=0,lastThrow=0,phaseAt=0;
+unsigned long lastSample=0,lastDraw=0,lastSync=0,lastThrow=0;
+volatile unsigned long phaseAt=0;
+TFT_eSprite screen(&M5.Lcd);
+bool screenReady=false;
+volatile bool feedbackConnected=false;
+unsigned long throwVisualAt=0;
 unsigned long stillMs=0,strongMs=0,quietMs=0;
 unsigned int throws=0;
 int lastHttp=0;
@@ -41,7 +46,7 @@ void setPhase(Phase value);
 void deliver(const NetReply& reply);
 void handleReply(const NetReply& reply);
 
-void setPhase(Phase value) { if(phase!=value){phase=value;phaseAt=millis();} }
+void setPhase(Phase value) { if(phase!=value){phaseAt=millis();phase=value;} }
 bool waiting() { return phase==SENDING||phase==WAIT_RESULT; }
 void cancelGesture() { armed=false;recording=false;released=false;settled=false; }
 bool freshBuddy() { return online&&clockReady&&transportReady&&buddy&&millis()-lastSync<12000; }
@@ -53,8 +58,8 @@ void clearRound() {
 void ledTask(void*) {
   for(;;){
     Phase current=phase;
-    bool on=current==CAUGHT||((current==SENDING||current==WAIT_RESULT)&&(millis()/250)%2==0);
-    digitalWrite(RED_LED_PIN,on?LOW:HIGH);
+    bool on=(current==CAUGHT&&millis()-phaseAt<3000)||((current==SENDING||current==WAIT_RESULT)&&(millis()/250)%2==0);
+    digitalWrite(RED_LED_PIN,on&&feedbackConnected?LOW:HIGH);
     vTaskDelay(pdMS_TO_TICKS(25));
   }
 }
@@ -174,62 +179,80 @@ void completeGesture(unsigned long now) {
   if(peakG<MIN_PEAK_G||score<MIN_SCORE||strongMs<60||peakGyro<MIN_GYRO){setPhase(WEAK);return;}
   ThrowJob job={};job.revision=revision;job.peak=peakG;job.score=score;job.duration=now-beganAt;
   snprintf(job.encounter,sizeof(job.encounter),"%s",buddyId);
-  setPhase(SENDING);
+  throwVisualAt=now;setPhase(SENDING);
   if(xQueueSend(jobs,&job,0)!=pdTRUE)setPhase(SEND_ERROR);
 }
 
-const char* title() {
-  switch(phase){
-    case OFFLINE:return "WIFI OFFLINE";case IDLE:return "WAIT FOR BUDDY";case FOUND:return "BUDDY APPEARED!";
-    case RELEASE_BUTTON:return "RELEASE BUTTON";case SETTLING:return "HOLD STILL";case READY:return "READY: SWING";
-    case SWING:return "SWING DETECTED";case SENDING:return "SENDING THROW";case WAIT_RESULT:return "WAIT RESULT";
-    case CAUGHT:return "CAPTURE SUCCESS";case ESCAPED:return "CAPTURE FAILED";case WEAK:return "TOO WEAK";
-    case ARM_TIMEOUT:return "ARM TIMEOUT";case RESULT_TIMEOUT:return "RESULT TIMEOUT";
-    case SEND_ERROR:return "SEND FAILED";case IMU_ERROR:return "IMU ERROR";case UPDATE_API:return "UPDATE CLOUD API";case INIT_ERROR:return "DEVICE INIT ERROR";case AUTH_ERROR:return "WRONG CLOUD KEY";
-    default:return "CHECK CONNECTION";
-  }
+// V2.7: native pixel graphics; diagnostics stay off the play screen.
+bool visualError() {
+  return phase==OFFLINE||phase==RESULT_TIMEOUT||phase==SYNC_ERROR||phase==SEND_ERROR||
+    phase==IMU_ERROR||phase==UPDATE_API||phase==INIT_ERROR||phase==AUTH_ERROR;
 }
-const char* hint() {
-  if(phase==INIT_ERROR)return "Restart device; task setup failed";
-  if(lastHttp==-1001)return "Fix SERVER_URL in cloud_config.h";
-  if(!online)return "Connect M5 to your phone hotspot";
-  if(!clockReady)return "Waiting for internet time sync";
-  if(!transportReady)return lastHttp==401?"Check cloud key in config":"Check phone / cloud connection";
-  if(waiting())return "Keep phone capture page open";
-  if(phase==CAUGHT)return "Caught! Waiting for next buddy";
-  if(phase==RELEASE_BUTTON)return "Release A; then wait for READY";
-  if(phase==SETTLING)return "Hold device steady briefly";
-  if(phase==READY||phase==SWING)return "Swing while holding the device";
-  return buddy?"Tap A to prepare a throw":"Keep PACE connected on your phone";
+void star(int x,int y,int size,uint16_t color) {
+  screen.fillTriangle(x,y-size,x-2,y+2,x+2,y+2,color);
+  screen.fillTriangle(x-size,y,x+2,y-2,x+2,y+2,color);
+  screen.fillTriangle(x,y+size,x-2,y-2,x+2,y-2,color);
+  screen.fillTriangle(x+size,y,x-2,y-2,x-2,y+2,color);
 }
 void drawScreen(unsigned long now) {
-  // Fixed rows, explicit clear and text clipping prevent leftovers and line wrapping.
-  static char previous[160]="";char stamp[160];
-  snprintf(stamp,sizeof(stamp),"%d|%d|%d|%d|%d|%d|%lu|%lu|%u|%.1f|%s",(int)phase,online,clockReady,transportReady,buddy,lastHttp,now/1000,revision,throws,peakG,lastResult);
-  if(strcmp(stamp,previous)==0)return;snprintf(previous,sizeof(previous),"%s",stamp);
-  M5.Lcd.fillScreen(BLACK);M5.Lcd.setTextWrap(false);M5.Lcd.setTextColor(WHITE,BLACK);
-  M5.Lcd.setTextSize(1);M5.Lcd.setCursor(5,4);M5.Lcd.print("PACE M5 2.6");
-  M5.Lcd.setCursor(151,4);M5.Lcd.printf("WiFi:%s",online?"OK":"OFF");
-  M5.Lcd.setTextSize(2);M5.Lcd.setCursor(5,27);M5.Lcd.printf("%.19s",title());
-  M5.Lcd.setTextSize(1);M5.Lcd.setCursor(5,55);
-  M5.Lcd.printf("Buddy: %s",!transportReady?"unknown":buddy?"Trail companion":"none");
-  M5.Lcd.setCursor(5,71);M5.Lcd.printf("%.38s",hint());
-  M5.Lcd.setCursor(5,87);
-  if(armed){
-    const unsigned long age=now-pressedAt,remaining=age<READY_MS?READY_MS-age:0;
-    M5.Lcd.printf("Ready window: %lus",(remaining+999)/1000);
+  if(!screenReady){M5.Lcd.fillScreen(BLACK);M5.Lcd.setCursor(62,112);M5.Lcd.print("!");return;}
+  const uint16_t bg=0x0842,ink=0x0000,red=0xE904,white=0xEF5D;
+  const bool connected=online&&clockReady&&transportReady&&now-lastSync<12000;
+  const unsigned long age=now-phaseAt;
+  const bool preparing=phase==RELEASE_BUTTON||phase==SETTLING||phase==READY||phase==SWING;
+  const bool shaking=waiting()&&connected;
+  const bool success=phase==CAUGHT;
+  const bool bright=connected&&(buddy||preparing||shaking||success||phase==ESCAPED);
+  const float pulse=(sinf(now*.003f)+1)*.5f;
+  const float angle=shaking?sinf(now*.012f)*.22f:0;
+  int radius=43;
+  if(preparing)radius+=age<240?(int)(5*sinf(age*3.14159f/240)):2;
+  const int cx=67+(shaking?(int)(sinf(now*.012f)*3):0),cy=127;
+  screen.fillSprite(bg);
+  // Green means a fresh authenticated cloud sync, not only a Wi-Fi association.
+  const uint16_t signal=connected?0x5ECA:0x632C;
+  for(int i=0;i<3;i++)screen.fillRect(10+i*5,19-i*4,3,5+i*4,signal);
+  if(!connected)screen.drawLine(9,9,25,25,0x9CD3);
+  if(connected&&buddy&&!preparing&&!shaking&&!success){
+    int halo=radius+7+(int)(pulse*4);
+    screen.drawCircle(cx,cy,halo,screen.color565(20,65+(int)(pulse*85),65+(int)(pulse*65)));
+    screen.drawCircle(cx,cy,halo+2,0x1946);
   }
-  else if(waiting())M5.Lcd.printf("Waiting: %lus / 20s",(now-phaseAt)/1000);
-  else M5.Lcd.printf("Throws:%u  Peak:%.2fg",throws,peakG);
-  M5.Lcd.setCursor(5,103);
-  if(lastSync)M5.Lcd.printf("Sync:%lus ago  HTTP:%d",(now-lastSync)/1000,lastHttp);
-  else M5.Lcd.printf("Cloud: not synced  HTTP:%d",lastHttp);
-  M5.Lcd.setCursor(5,119);M5.Lcd.printf("Last result: %.20s",lastResult);
+  if(preparing)screen.drawCircle(cx,cy,radius+6,phase==READY?0x5ECA:0xEDE8);
+  screen.fillEllipse(67,191,radius-7,5,0x0020);
+  // Rotate colored scanlines in a sprite, then transfer one complete frame.
+  const float c=cosf(angle),sn=sinf(angle);
+  int gap=phase==ESCAPED&&age<900?(int)(14*sinf(age*3.14159f/900)):0;
+  for(int y=-radius;y<=radius;y++){
+    int half=(int)sqrtf((float)(radius*radius-y*y));
+    int shift=y<0?-gap:gap;
+    uint16_t color=abs(y)<4?ink:y<0?(bright?red:0x6002):(bright?white:0x528A);
+    screen.drawLine(cx+(int)(-half*c-y*sn),cy+(int)(-half*sn+y*c)+shift,
+                    cx+(int)(half*c-y*sn),cy+(int)(half*sn+y*c)+shift,color);
+  }
+  if(gap<5){
+    screen.drawCircle(cx,cy,radius,ink);
+    screen.fillCircle(cx,cy,12,ink);screen.fillCircle(cx,cy,8,bright?white:0x528A);
+    screen.drawCircle(cx,cy,5,bright?0xB596:0x3186);
+  }
+  if(shaking&&now-throwVisualAt<130)screen.drawCircle(cx,cy,radius+5,WHITE);
+  if(success&&age<2000){
+    uint16_t gold=(age/180)%2?0xFFE0:0xFF8D;
+    star(27,78,7,gold);star(107,88,6,gold);star(91,61,5,gold);
+  }
+  if(phase==ESCAPED&&age<250)star(cx,cy,10,0xFFE0);
+  if(visualError()||phase==WEAK||phase==ARM_TIMEOUT){
+    screen.fillCircle(112,171,9,0xFCA0);screen.fillRect(111,165,3,7,ink);
+    screen.fillRect(111,174,3,2,ink);
+  }
+  screen.pushSprite(0,0);
 }
 
 void setup() {
-  M5.begin();Serial.begin(115200);M5.Imu.Init();M5.Lcd.setRotation(3);
+  M5.begin();Serial.begin(115200);M5.Imu.Init();M5.Lcd.setRotation(0);
+  screen.setColorDepth(16);screenReady=screen.createSprite(135,240)!=nullptr;
   pinMode(RED_LED_PIN,OUTPUT);digitalWrite(RED_LED_PIN,HIGH);
+  if(!screenReady){setPhase(INIT_ERROR);return;}
   jobs=xQueueCreate(2,sizeof(ThrowJob));replies=xQueueCreate(12,sizeof(NetReply));
   WiFi.mode(WIFI_STA);WiFi.setAutoReconnect(true);WiFi.begin(WIFI_SSID,WIFI_PASS);
   configTime(0,0,"pool.ntp.org","time.google.com");
@@ -243,10 +266,14 @@ void loop() {
   if(!deviceReady){drawScreen(now);delay(100);return;}
   if(replies)while(xQueueReceive(replies,&reply,0)==pdTRUE)handleReply(reply);
   now=millis();
+  if(phase==CAUGHT&&now-phaseAt>=3000)setPhase(IDLE);
+  if(phase==ESCAPED&&now-phaseAt>=900)setPhase(freshBuddy()?FOUND:IDLE);
+  if((phase==WEAK||phase==ARM_TIMEOUT)&&now-phaseAt>=900)setPhase(freshBuddy()?FOUND:IDLE);
   if(waiting()&&now-phaseAt>=RESULT_MS){revision++;pendingSequence=0;setPhase(RESULT_TIMEOUT);}
   if(transportReady&&now-lastSync>=12000){transportReady=false;cancelGesture();if(!waiting())setPhase(SYNC_ERROR);}
+  feedbackConnected=online&&clockReady&&transportReady&&now-lastSync<12000;
   bool down=M5.BtnA.isPressed();
-  if(down&&!previousDown&&!armed&&!waiting()&&jobs&&freshBuddy()&&phase!=CAUGHT&&now-lastThrow>=1000){
+  if(down&&!previousDown&&!armed&&!waiting()&&jobs&&freshBuddy()&&phase!=CAUGHT&&phase!=ESCAPED&&now-lastThrow>=1000){
     cancelGesture();pressedAt=now;armed=true;peakG=score=peakGyro=0;stillMs=strongMs=quietMs=0;
     strcpy(lastResult,"--");setPhase(RELEASE_BUTTON);
   }
@@ -274,6 +301,6 @@ void loop() {
       }
     }
   }
-  if(now-lastDraw>=100){lastDraw=now;drawScreen(millis());}
+  if(now-lastDraw>=50){lastDraw=now;drawScreen(millis());}
   delay(2);
 }

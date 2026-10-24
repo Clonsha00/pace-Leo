@@ -40,7 +40,7 @@ close(ctx.session.energy.kcal,heat);
 const elements=new Map();
 const element=()=>({children:[],textContent:'',append(...c){this.children.push(...c);},replaceChildren(){this.children=[];},addEventListener(){}});
 const doc={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},createElement:element,addEventListener(){}};
-const review={document:doc,MoveCore:core};vm.createContext(review);
+const review={document:doc,MoveCore:core,PrecisionExperiment:require('../precision.js')};vm.createContext(review);
 vm.runInContext(fs.readFileSync(require.resolve('../review.js'),'utf8').replace("  $('file').addEventListener", "  globalThis.showFacts=showFacts;\n  $('file').addEventListener"),review);
 review.showFacts({points,meters:22,seconds:120,weight:60,activity:'walk',energyMethod:'acsm-level-v1',kcal:total.kcal});
 assert.ok(elements.get('facts').children.some(e=>e.textContent.includes('ACSM')));

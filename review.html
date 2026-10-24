@@ -84,6 +84,13 @@ th{color:var(--muted);font-weight:600}
     </table></div>
   </div>
 </div></details>
+  <details class="analysis-section" open><summary><span class="section-number">05</span>精度門檻對照：35 公尺與 20 公尺<span class="section-toggle">＋</span></summary><div class="analysis-body">
+    <p class="note">用同一批資料，只改定位精度上限，其他距離、速度上限、小位移與 30 秒斷段規則相同。這裡的精度是手機回報的誤差範圍，不是移動距離；數字越小，條件越嚴格。</p>
+    <p class="note" id="precisionNote" role="status"></p>
+    <div class="table-wrap"><table><thead><tr><th>精度上限</th><th>有效點數</th><th>總距離</th><th>段數</th><th>精度未通過</th><th>其他篩選排除</th></tr></thead><tbody id="precisionRows"></tbody></table></div>
+    <p class="note" id="precisionDelta"></p>
+    <p class="note">保留原本的暫停區間，不補造漏記路程；不重算計時或熱量，也不改寫原檔。精度篩選改變後，後續比較的參考點也可能改變，因此點數與距離不保證固定往同一方向變化。這是參數敏感度實驗，不能證明較嚴格就較準確。若要填紀錄表 C 區，請註明比較方式，兩組數字都使用這裡的結果。</p>
+  </div></details>
 </section>
 
 <section class="card" id="list" hidden>
@@ -94,6 +101,7 @@ th{color:var(--muted);font-weight:600}
 <script src="vendor/leaflet.js"></script>
 <script src="tiles.js"></script>
 <script src="core.js"></script>
+<script src="precision.js"></script>
 <script src="review.js"></script>
 </body>
 </html>

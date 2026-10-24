@@ -1,0 +1,5 @@
+{
+  "name": "pace-m5", "private": true, "version": "0.2.0",
+  "scripts": {"build": "node cloud/build.mjs", "dev": "wrangler dev", "deploy": "wrangler deploy"},
+  "devDependencies": {"wrangler": "^4.0.0"}
+}

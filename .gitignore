@@ -5,3 +5,10 @@ my-tracks/
 campus-track*.json
 campus-move*.csv
 .DS_Store
+hardware/pace-relay/.local/
+**/__pycache__/
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+hardware/M5_Cloud_Throw/cloud_config.h

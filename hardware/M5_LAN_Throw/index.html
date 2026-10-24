@@ -1,0 +1,35 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PACE 捕捉測試</title><style>
+*{box-sizing:border-box}body{margin:0;background:#141b2e;color:#f7f1d9;font-family:system-ui,'Noto Sans TC',sans-serif}main{max-width:460px;margin:auto;padding:28px 18px}.panel{background:#243450;border:3px solid #708ba8;border-radius:16px;padding:22px;text-align:center;box-shadow:0 7px #0a1020}h1{font-size:24px;letter-spacing:2px}.sprite{font-size:88px;min-height:126px;padding-top:12px}.name{font-weight:700;font-size:23px}button{border:0;border-bottom:5px solid #6b361e;border-radius:12px;background:#f7a65e;color:#252133;font-weight:800;font-size:17px;padding:13px 18px;margin:7px;cursor:pointer}button:disabled{filter:grayscale(1);opacity:.55}.secondary{background:#aec8da;border-color:#50627b}.status{padding:12px;font-size:14px;color:#d9e8f7}.log{font-size:15px;min-height:24px}.collection{padding:12px;border:2px dashed #92afc7;border-radius:12px;margin-top:18px}.foot{font-size:12px;color:#9cb5d0;margin:16px 0;line-height:1.7}
+</style></head><body><main><h1>✦ PACE 捕捉實驗室 ✦</h1><section class="panel"><div id="sprite" class="sprite">❔</div><div id="name" class="name">等待角色出現</div><p class="log" id="result">先點「測試出現」</p><p class="log" id="metrics">投球數據：尚無</p><p class="log" id="chance">捕捉率：—</p><button id="appear">測試出現</button><button id="throw" class="secondary" disabled>模擬投球</button><div class="collection">收藏：<span id="count">0</span> 隻小夥伴</div></section><div class="status" id="connection">正在檢查本機接收服務…</div><p class="foot">每秒查詢電腦上的投球事件。只有角色出現時才接受投球，避免重複捕捉。收藏儲存在此瀏覽器。</p></main><script>
+const $ = id=>document.getElementById(id); let encounter=false,busy=false,lastSequence=null;
+let collected=0;try{collected=Number(localStorage.getItem('pace_demo_collected'))||0}catch{} $('count').textContent=collected;
+$('appear').onclick=()=>{encounter=true;busy=false;$('sprite').textContent='🐾';$('name').textContent='預設小夥伴';$('result').textContent='小夥伴出現了！準備投球';$('throw').disabled=false;};
+function onThrow(event=null){
+  if(!encounter||busy)return;
+  const peak=Number(event?.peak_g ?? event?.accel_g ?? 2.0);
+  const score=Number(event?.motion_score ?? 0.32);
+  const duration=Number(event?.duration_ms ?? 300);
+  if(!Number.isFinite(peak)||!Number.isFinite(score))return;
+  // Example gameplay formula, not a physics-based capture probability.
+  const chance=Math.max(0.12,Math.min(0.90,0.25+Math.min(score,1.2)*0.4+Math.max(0,Math.min(peak-1.5,2))*0.08));
+  $('metrics').textContent=`峰值 ${peak.toFixed(2)}g ｜ 動作分數 ${score.toFixed(3)} ｜ 時間 ${Math.round(duration)}ms`;
+  $('chance').textContent=`本次捕捉率 ${(chance*100).toFixed(0)}%（遊戲測試公式）`;
+  busy=true;$('throw').disabled=true;$('sprite').textContent='🔴';$('result').textContent='捕捉球飛出！';
+  const success=Math.random()<chance;
+  setTimeout(()=>{
+    if(success){$('sprite').textContent='✨';$('name').textContent='捕捉成功！';$('result').textContent='獲得：預設小夥伴';encounter=false;collected++;$('count').textContent=collected;try{localStorage.setItem('pace_demo_collected',collected)}catch{}}
+    else{$('sprite').textContent='🐾';$('name').textContent='預設小夥伴';$('result').textContent='捕捉失敗！可以再投一次';encounter=true;$('throw').disabled=false;}
+    busy=false;
+  },700);
+}
+$('throw').onclick=()=>onThrow({peak_g:2,motion_score:0.45,duration_ms:280});
+async function poll(){
+ try{
+  const r=await fetch('/api/last',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);
+  const d=await r.json();$('connection').textContent='🟢 電腦接收服務已連線｜事件序號 '+d.sequence;
+  if(lastSequence===null){lastSequence=d.sequence;return;}
+  if(d.sequence>lastSequence){lastSequence=d.sequence;onThrow(d.event);}
+ }catch(e){$('connection').textContent='🔴 無法連到本機接收服務：'+e.message;}
+}
+setInterval(poll,750);poll();
+</script></body></html>

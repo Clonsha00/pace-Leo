@@ -191,6 +191,25 @@
     addFact(dl, 'MET − 1 的意思', '每個已估算區間扣除 1 MET 的標準休息消耗，不是將總熱量直接減 1 kcal。暫停期間不計。');
   }
 
+  function showPrecision(r) {
+    const result=PrecisionExperiment.compare(r),body=$('precisionRows');
+    body.replaceChildren();
+    $('precisionNote').textContent=result.note;
+    $('precisionDelta').textContent='';
+    if(result.mode==='unavailable') return;
+    const label=result.mode==='complete'?'原始資料完整重播':result.mode==='unverified'?'原始資料重播未吻合':'有效點有限比較';
+    for(const [limit,group] of [[35,result.before],[20,result.after]]) {
+      const row=document.createElement('tr');
+      for(const value of [limit+' 公尺',group.count+' 個',group.meters.toFixed(3)+' 公尺',group.segments+' 段',group.accuracyRejected+' 個',group.otherRejected+' 個']) {
+        const cell=document.createElement('td');cell.textContent=value;row.append(cell);
+      }
+      body.append(row);
+    }
+    const signed=n=>(n>0?'+':'')+n;
+    $('precisionDelta').textContent=label+'；輸入 '+result.inputCount+' 點。20 公尺組 − 35 公尺組：有效點 '+signed(result.countChange)
+      +' 個，距離 '+signed(Number(result.distanceChange.toFixed(3)))+' 公尺（'+(result.distancePercent===null?'基準距離為零，不計百分比':signed(Number(result.distancePercent.toFixed(6)))+'%')+'）。';
+  }
+
   function showFacts(r) {
     const km = r.meters / 1000, sec = r.seconds;
     const speed = sec > 0 ? km / (sec / 3600) : 0;
@@ -248,6 +267,7 @@
     showAnalysis(r);
     showBreaks(r);
     showEnergyComparison(r, energy, estimate, computedKcal);
+    showPrecision(r);
   }
 
   function showList(rows, name) {

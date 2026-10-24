@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import worker,{ThrowRelay} from '../cloud/worker.mjs';
+const memory=new Map();
+const storage={get:async k=>memory.get(k),put:async(k,v)=>memory.set(k,v),transaction:async fn=>fn(storage)};
+let relay=new ThrowRelay({storage});
+const token='a'.repeat(64);
+const env={RELAY_TOKEN:token,ASSETS:{fetch:async()=>new Response('PAGE')},THROWS:{idFromName:x=>x,get:()=>({fetch:r=>relay.fetch(r)})}};
+const req=(path,body,secret=token)=>new Request('https://pace.test'+path,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+secret},...(body===undefined?{}:{body:JSON.stringify(body)})});
+assert.equal((await worker.fetch(req('/'),env)).status,200);
+assert.equal((await worker.fetch(req('/api/config'),env)).status,200);
+assert.equal((await worker.fetch(req('/api/last',undefined,'wrong'),env)).status,401);
+assert.equal((await worker.fetch(req('/api/last'),{...env,RELAY_TOKEN:null})).status,503);
+assert.equal((await worker.fetch(req('/api/throw',{event:'throw',peak_g:true}),env)).status,400);
+assert.equal((await worker.fetch(req('/api/throw',{event:'throw',peak_g:-1}),env)).status,400);
+assert.equal((await worker.fetch(req('/api/throw',{event:'throw'}),env)).status,400);
+assert.equal((await worker.fetch(req('/api/throw',{event:'throw',peak_g:2,motion_score:.3}),env)).status,200);
+assert.equal((await worker.fetch(req('/api/throw',{event:'throw',peak_g:2}),env)).status,429);
+relay=new ThrowRelay({storage}); // object instance recreation retains saved sequence and event
+const last=await (await worker.fetch(req('/api/last'),env)).json();
+assert.equal(last.sequence,1);assert.equal(last.event.peak_g,2);assert.ok(last.now>=last.event.at);
+assert.equal((await worker.fetch(req('/api/throw',{event:'throw',padding:'x'.repeat(1100)}),env)).status,413);
+assert.equal((await worker.fetch(req('/api/missing'),env)).status,404);
+assert.equal((await worker.fetch(req('/api/last',{}),env)).status,405);
+console.log('Cloud auth, request limits, metrics, rate limit, persistent sequence and relay response passed.');

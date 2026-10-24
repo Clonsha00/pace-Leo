@@ -8,6 +8,7 @@
 #include <freertos/queue.h>
 #include <math.h>
 #include <time.h>
+#include <esp_system.h>
 #include "cloud_config.h"
 #include "root_ca.h"
 
@@ -37,6 +38,7 @@ unsigned long lastSample=0,lastDraw=0,lastSync=0,lastThrow=0;
 volatile unsigned long phaseAt=0;
 TFT_eSprite screen(&M5.Lcd);
 bool screenReady=false;
+uint16_t* screenPixels=nullptr;
 volatile bool feedbackConnected=false;
 unsigned long throwVisualAt=0;
 unsigned long stillMs=0,strongMs=0,quietMs=0;
@@ -209,7 +211,7 @@ void completeGesture(unsigned long now) {
   if(xQueueSend(jobs,&job,0)!=pdTRUE)setPhase(SEND_ERROR);
 }
 
-// V2.9: native pixel graphics; diagnostics stay off the play screen.
+// V2.10: redraw only changed regions; diagnostics stay off the play screen.
 bool visualError() {
   return phase==OFFLINE||phase==RESULT_TIMEOUT||phase==SYNC_ERROR||phase==SEND_ERROR||
     phase==IMU_ERROR||phase==UPDATE_API||phase==INIT_ERROR||phase==AUTH_ERROR;
@@ -221,7 +223,11 @@ void star(int x,int y,int size,uint16_t color) {
   screen.fillTriangle(x+size,y,x-2,y-2,x-2,y+2,color);
 }
 void drawScreen(unsigned long now) {
-  if(!screenReady){M5.Lcd.fillScreen(BLACK);M5.Lcd.setCursor(62,112);M5.Lcd.print("!");return;}
+  if(!screenReady){
+    static bool shown=false;
+    if(!shown){M5.Lcd.fillScreen(BLACK);M5.Lcd.setCursor(62,112);M5.Lcd.print("!");shown=true;}
+    return;
+  }
   const uint16_t bg=0x0842,ink=0x0000,red=0xE904,white=0xEF5D;
   const bool connected=online&&clockReady&&transportReady&&now-lastSync<SYNC_FRESH_MS;
   const unsigned long age=now-phaseAt;
@@ -229,6 +235,15 @@ void drawScreen(unsigned long now) {
   const bool shaking=waiting()&&connected;
   const bool success=phase==CAUGHT;
   const bool bright=connected&&(buddy||preparing||shaking||success||phase==ESCAPED);
+  // Stop all display traffic for an unchanged idle/error frame. Animated states
+  // retain 20 fps, but never clear or retransmit the entire physical panel.
+  const bool animated=shaking||(connected&&buddy&&!preparing&&!success)||
+    (preparing&&age<240)||(phase==ESCAPED&&age<900)||(success&&age<2000);
+  static bool painted=false,previousConnected=false;
+  static char previous[96]="";char stamp[96];
+  snprintf(stamp,sizeof(stamp),"%d|%d|%d|%lu|%lu|%d",(int)phase,connected,buddy,revision,animated?now/50:0,animated);
+  if(painted&&strcmp(previous,stamp)==0)return;
+  snprintf(previous,sizeof(previous),"%s",stamp);
   const float pulse=(sinf(now*.003f)+1)*.5f;
   const float angle=shaking?sinf(now*.012f)*.22f:0;
   int radius=43;
@@ -271,12 +286,22 @@ void drawScreen(unsigned long now) {
     screen.fillCircle(112,171,9,0xFCA0);screen.fillRect(111,165,3,7,ink);
     screen.fillRect(111,174,3,2,ink);
   }
-  screen.pushSprite(0,0);
+  // Sprite bytes use the same byte order as pushSprite. Transfer full-width
+  // contiguous rows so the top connection indicator and background stay intact.
+  if(!painted)screen.pushSprite(0,0);
+  else{
+    auto pixels=screenPixels;
+    if(connected!=previousConnected)M5.Lcd.pushImage(0,0,135,32,pixels);
+    M5.Lcd.pushImage(0,44,135,168,pixels+44*135);
+  }
+  previousConnected=connected;painted=true;
 }
 
 void setup() {
-  M5.begin();Serial.begin(115200);M5.Imu.Init();M5.Lcd.setRotation(0);
-  screen.setColorDepth(16);screenReady=screen.createSprite(135,240)!=nullptr;
+  M5.begin();Serial.begin(115200);
+  Serial.printf("[boot] firmware=2.10 reset_reason=%d heap=%u\n",(int)esp_reset_reason(),ESP.getFreeHeap());
+  M5.Imu.Init();M5.Lcd.setRotation(0);
+  screen.setColorDepth(16);screenPixels=static_cast<uint16_t*>(screen.createSprite(135,240));screenReady=screenPixels!=nullptr;
   pinMode(RED_LED_PIN,OUTPUT);digitalWrite(RED_LED_PIN,HIGH);
   if(!screenReady){setPhase(INIT_ERROR);return;}
   jobs=xQueueCreate(2,sizeof(ThrowJob));replies=xQueueCreate(12,sizeof(NetReply));

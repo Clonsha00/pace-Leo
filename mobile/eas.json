@@ -1,0 +1,7 @@
+{
+  "cli": {"version": ">= 19.1.0", "appVersionSource": "local"},
+  "build": {
+    "development": {"environment": "development", "developmentClient": true, "distribution": "internal", "ios": {"simulator": false}},
+    "preview": {"environment": "preview", "distribution": "internal", "ios": {"simulator": false}}
+  }
+}

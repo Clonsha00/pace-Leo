@@ -1,0 +1,100 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const core=require('../core.js');
+const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
+// 60 kg, level walking at 5 km/h for 20 minutes = 71 kcal.
+const walk=core.energyInterval('walk',60,25,18);
+close(walk.kcal/18*1200,71);
+const run=core.energyInterval('run',60,25,18);
+assert.ok(run.kcal>walk.kcal);
+close(core.energyInterval('walk',120,25,18).kcal,walk.kcal*2);
+assert.equal(core.energyInterval('walk',60,25,31),null);
+assert.equal(core.energyInterval('walk',60,25,0),null);
+assert.equal(core.energyInterval('invalid',60,25,18),null);
+assert.equal(core.energyInterval('walk',60,NaN,18),null);
+assert.equal(core.energyInterval('walk',60,0,18).outsideRange,true);
+assert.equal(walk.outsideRange,false);
+assert.equal(run.outsideRange,true);
+const point=(t,lng,segment=0)=>({lat:0,lng,t,accuracy:6,segment});
+const points=[point(1000,0),point(11000,.0001),point(100000,1,1),point(110000,1.0001,1)];
+const total=core.trackEnergy(points,'walk',60);
+close(total.seconds,20);
+close(total.kcal,core.energyInterval('walk',60,core.distance(points[0],points[1]),10).kcal+core.energyInterval('walk',60,core.distance(points[2],points[3]),10).kcal);
+close(core.trackEnergy([points[0]],'walk',60).kcal,0);
+// Execute the actual recording path: no heat for rejected fixes or new segments.
+const source=fs.readFileSync(require.resolve('../app.js'),'utf8');
+const ctx={MoveCore:core,Date,session:{state:'running',demo:false,activity:'walk',weight:60,energy:{kcal:0,seconds:0,outsideRangeSeconds:0},seconds:0,points:[],meters:0},last:null,lines:[],map:null,$:()=>({}),displayPosition(){},message(){},setTrack(){},render(){},markDataGap(){}};
+vm.createContext(ctx);
+vm.runInContext(['recordBreak','completeBreaks','receive'].map(name=>source.split('\n').find(s=>s.startsWith('function '+name+'('))).join('\n'),ctx);
+const receive=p=>{ctx.p=p;vm.runInContext('receive(p)',ctx);};
+receive(point(1000,0));receive(point(11000,.0001));
+const heat=ctx.session.energy.kcal;
+receive({...point(12000,.0002),accuracy:50});
+close(ctx.session.energy.kcal,heat);
+receive(point(100000,1));
+close(ctx.session.energy.kcal,heat);
+ctx.last=null;receive(point(200000,2));
+close(ctx.session.energy.kcal,heat);
+// Import viewer supports both the new method and legacy fixed MET files.
+const elements=new Map();
+const element=()=>({children:[],textContent:'',append(...c){this.children.push(...c);},replaceChildren(){this.children=[];},addEventListener(){}});
+const doc={getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},createElement:element,addEventListener(){}};
+const review={document:doc,MoveCore:core};vm.createContext(review);
+vm.runInContext(fs.readFileSync(require.resolve('../review.js'),'utf8').replace("  $('file').addEventListener", "  globalThis.showFacts=showFacts;\n  $('file').addEventListener"),review);
+review.showFacts({points,meters:22,seconds:120,weight:60,activity:'walk',energyMethod:'acsm-level-v1',kcal:total.kcal});
+assert.ok(elements.get('facts').children.some(e=>e.textContent.includes('ACSM')));
+review.showFacts({points,meters:22,seconds:1200,weight:60,met:3.5});
+assert.equal(elements.get('statKcal').textContent,'74');
+assert.ok(!elements.get('facts').children.some(e=>e.textContent.includes('ACSM')));
+// Demo time follows synthetic timestamps, without adding wall-clock time.
+ctx.session={demo:true,state:'running',seconds:0,demoIndex:0,id:1000,runStart:100};ctx.center=[24,120];ctx.receive=p=>{ctx.latest=p;};
+vm.runInContext(source.split('\n').find(s=>s.startsWith('function seconds('))+'\n'+source.split('\n').find(s=>s.startsWith('function demoTick('))+'\ndemoTick();demoTick();demoTick();',ctx);
+close(vm.runInContext('seconds()',ctx),12);
+assert.equal(ctx.latest.t,13000);
+console.log('ACSM formulas, units, weight, range, gaps, recording, imports and demo timing passed.');
+
+// Rest supplementation covers only unobserved active time, never twice.
+close(core.energyWithRest({kcal:0,seconds:0},60,60).gapKcal,1.05);
+close(core.energyWithRest({kcal:10,seconds:60},60,60).kcal,10);
+close(core.energyWithRest({kcal:10,seconds:30},60,60).kcal,10.525);
+close(core.energyWithRest({kcal:10,seconds:61},60,60).gapKcal,0);
+const withRest=core.energyWithRest(total,60,120);
+close(withRest.gapSeconds,100);
+review.showFacts({points,meters:22,seconds:120,weight:60,activity:'walk',energyMethod:'acsm-level-rest-v2',kcal:withRest.kcal});
+assert.ok(elements.get('facts').children.some(e=>e.textContent.includes('1.75 kcal')));
+assert.ok(elements.get('facts').children.some(e=>e.textContent.includes('差 0.00 kcal')));
+console.log('Rest supplementation, no double counting and new import verification passed.');
+
+// Report comparisons use the same coverage as each algorithm version.
+const fact=label=>{
+ const children=elements.get('energyComparison').children;
+ const index=children.findIndex(e=>e.textContent===label);
+ assert.ok(index>=0,label);
+ return children[index+1].textContent;
+};
+const walkPoints=Array.from({length:41},(_,i)=>point(1000+i*30000,(i*125/3)/6371000*180/Math.PI));
+review.showFacts({points:walkPoints,meters:5000/3,seconds:1200,weight:60,activity:'walk',energyMethod:'acsm-level-rest-v2'});
+assert.match(fact('重算總消耗'),/^71.000 kcal/);
+assert.match(fact('標準休息消耗'),/^21.000 kcal/);
+assert.match(fact('活動淨消耗'),/^50.000 kcal/);
+const half=walkPoints.slice(0,21);
+review.showFacts({points:half,meters:2500/3,seconds:1200,weight:60,activity:'walk',energyMethod:'acsm-level-v1'});
+assert.match(fact('標準休息消耗'),/^10.500 kcal/);
+assert.match(fact('活動淨消耗'),/^25.000 kcal/);
+review.showFacts({points:half,meters:2500/3,seconds:1200,weight:60,activity:'walk',energyMethod:'acsm-level-rest-v2'});
+assert.match(fact('重算總消耗'),/^46.000 kcal/);
+assert.match(fact('標準休息消耗'),/^21.000 kcal/);
+assert.match(fact('活動淨消耗'),/^25.000 kcal/);
+assert.match(fact('計算範圍'),/淨活動消耗為 0/);
+review.showFacts({points:[walkPoints[0]],meters:0,seconds:1200,weight:60,activity:'walk',energyMethod:'acsm-level-rest-v2'});
+assert.match(fact('重算總消耗'),/^21.000 kcal/);
+assert.match(fact('活動淨消耗'),/^0.000 kcal/);
+review.showFacts({points,meters:22,seconds:1200,weight:60,met:3.5});
+assert.match(fact('重算總消耗'),/^73.500 kcal/);
+assert.match(fact('活動淨消耗'),/^52.500 kcal/);
+review.showFacts({points,meters:22,seconds:0,weight:60,met:3.5});
+assert.match(fact('活動淨消耗'),/^0.000 kcal/);
+review.showFacts({points,meters:22,seconds:1200,met:3.5});
+assert.match(fact('比較狀態'),/無法比較/);
+console.log('Gross, standard rest and net energy comparisons passed for full, partial, missing and legacy data.');

@@ -7,7 +7,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="style.css">
-<title>匯入檢視 · PACE 校園運動</title>
+<title>運動分析 · PACE 校園運動</title>
 <style>
 body{background:var(--paper);color:var(--ink);font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;margin:0}
 .review{max-width:1040px;margin:0 auto;padding:22px 18px 64px}
@@ -42,13 +42,13 @@ th{color:var(--muted);font-weight:600}
 <main class="review">
 <header class="rtop">
   <a class="brand" href="index.html">PACE 校園運動</a>
-  <nav><a href="index.html">開始運動</a><a class="active" href="review.html">匯入檢視</a><a href="handout.html">學習中心</a></nav>
+  <nav><a href="index.html">開始運動</a><a class="active" href="review.html" aria-current="page">運動分析</a><a href="handout.html">運動知識</a></nav>
 </header>
-<h1>匯入運動紀錄</h1>
-<p class="lead">在「運動紀錄」按「軌跡」下載的 JSON，可以在這裡看到路線、起點、集合點與詳細數據。在「運動紀錄」按「摘要」下載的 CSV，可以一次看多筆摘要。檔案只在你的瀏覽器中讀取，不會上傳。</p>
+<div class="analysis-heading"><span class="overline">YOUR ACTIVITY, EXPLAINED</span><h1>回顧這一段路。</h1><p>從軌跡到數據，看懂每一次運動。</p></div>
+<p class="lead">在「運動紀錄」按「軌跡」下載的 JSON，可以在這裡看到路線、起終點與詳細數據。在「運動紀錄」按「摘要」下載的 CSV，可以一次看多筆摘要。檔案只在你的瀏覽器中讀取，不會上傳。</p>
 
 <section class="drop" id="drop">
-  <input id="file" type="file" accept=".json,.csv,application/json,text/csv" multiple>
+  <div class="upload-heading"><span>01</span><div><h2>選擇運動紀錄</h2><p>軌跡 JSON 看完整分析，摘要 CSV 看多筆紀錄。</p></div></div><label for="file" class="file-label">從裝置選擇檔案</label><input id="file" type="file" accept=".json,.csv,application/json,text/csv" multiple>
   <p class="note">也可以把檔案拖曳到這個框內。一次開啟一份軌跡 JSON，或一份摘要 CSV。</p>
 </section>
 <p id="status" role="status" aria-live="polite"></p>
@@ -58,11 +58,32 @@ th{color:var(--muted);font-weight:600}
     <div><span>累積距離</span><strong id="statDistance">0.00</strong><small>km</small></div>
     <div><span>運動時間</span><strong id="statTime">00:00</strong></div>
     <div><span>平均速度</span><strong id="statSpeed">0.0</strong><small>km/h</small></div>
-    <div><span>估算熱量</span><strong id="statKcal">0</strong><small>kcal</small></div>
+    <div><span>總消耗（估算）</span><strong id="statKcal">0</strong><small>kcal</small></div>
   </div>
   <div id="reviewMap" aria-label="運動軌跡地圖"></div>
-  <p class="note">藍色終點與綠色起點之間為實際記錄的軌跡。若有設定集合點，虛線為終點到集合點的直線距離，不是步行路線。</p>
-  <dl id="facts" style="margin-top:14px"></dl>
+  <p class="note">藍色終點與綠色起點之間為實際記錄的軌跡。</p>
+  <details class="analysis-section"><summary><span class="section-number">01</span>紀錄與定位品質<span class="section-toggle">＋</span></summary><div class="analysis-body"><dl id="facts"></dl></div></details>
+  <details class="analysis-section" open><summary><span class="section-number">02</span>熱量怎麼算<span class="section-toggle">＋</span></summary><div class="analysis-body">
+  <p class="note">依紀錄版本重新計算，對照「MET − 1」。淨消耗是扣除標準休息消耗後的估算；所有數值均非個人實測。首頁與上方摘要仍顯示總消耗。</p>
+  <dl id="energyComparison"></dl></div></details>
+  <details class="analysis-section"><summary><span class="section-number">03</span>斷段與暫停原因<span class="section-toggle">＋</span></summary><div class="analysis-body">
+  <p class="note" id="breakNote"></p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>原因</th><th>事件時間（UTC）</th><th>前一有效點與 t（毫秒）</th><th>後一有效點與 t（毫秒）</th><th>恢復有效定位時間（UTC）</th></tr></thead>
+    <tbody id="breakRows"></tbody>
+  </table></div></div></details>
+  <details class="analysis-section" open><summary><span class="section-number">04</span>距離與速度驗算<span class="section-toggle">＋</span></summary><div class="analysis-body">
+  <p class="note">從 JSON 的有效定位點重新計算，同段相鄰點才連線。差異百分比＝（紀錄距離 − 重算距離）÷ 紀錄距離 × 100%。數值一致只代表計算一致，不能證明 GPS 距離沒有誤差。</p>
+  <dl id="analysisFacts"></dl>
+  <div id="fastestEvidence" hidden>
+    <h3 style="margin-top:20px">最快區間的定位證據</h3>
+    <p class="note">點編號從 1 開始，對應 JSON 的 points 順序，不是原始定位點的編號。時間保留原始 t（毫秒）；日期使用 UTC（Z）。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>有效點編號</th><th>t（毫秒）</th><th>UTC 日期時間</th><th>緯度</th><th>經度</th></tr></thead>
+      <tbody id="fastestPoints"></tbody>
+    </table></div>
+  </div>
+</div></details>
 </section>
 
 <section class="card" id="list" hidden>

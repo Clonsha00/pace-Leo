@@ -4,7 +4,7 @@
 
 ## 檔案地圖
 
-- `index.html`：首頁，包含開始運動、運動紀錄、地圖與集合點。
+- `index.html`：首頁，包含開始運動、運動紀錄、運動軌跡地圖。
 - `app.js`：GPS 記錄流程、地圖、紀錄與匯出（摘要 CSV、軌跡 JSON）。
 - `core.js`：距離（Haversine）、熱量（MET × 3.5 × 體重 ÷ 200 × 分鐘）與定位點過濾。
 - `review.html`、`review.js`：匯入檢視。讀取使用者自己匯出的 JSON 與 CSV，只在瀏覽器中運作。

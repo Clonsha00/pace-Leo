@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#293e35">
+  <title>PACE · 像素運動日誌｜互動風格範本</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-boot" viewBox="0 0 24 24"><path d="M6 3h9v4h-3v5h3v3h6v6H3V9h3z"/><path d="M3 18h18" class="icon-line"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><path d="M3 3h6v6H3zm12 12h6v6h-6zM6 12h3v6h3v3H6zm6-9h6v9h-3V6h-3z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3h3v15h15v3H3zm6 9h3v3H9zm6-6h3v9h-3zm6-3h3v12h-3z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M9 0h6v6h3v3h6v6h-6v3h-3v6H9v-6H6v-3H0V9h6V6h3z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M9 0h6v3h6v6h3v6h-3v6h-6v3H9v-3H3v-6H0V9h3V3h6zm0 9v6h6V9z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M3 3h6v3h6V3h6v3h3v9h-3v3h-3v3h-3v3H9v-3H6v-3H3v-3H0V6h3z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><path d="M9 6h6v3h3v6h-3v3H9v-3H6V9h3zM9 0h6v3H9zm0 21h6v3H9zM0 9h3v6H0zm21 0h3v6h-3zM3 3h3v3H3zm15 15h3v3h-3zM18 3h3v3h-3zM3 18h3v3H3z"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M3 0h3v24H3zm6 3h12v9H9z"/></symbol>
+</svg>
+
+<aside class="sidebar">
+  <a class="brand" href="#dashboard" aria-label="PACE 像素範本首頁"><span class="brand-mark"><svg><use href="#i-boot"/></svg></span><span>PACE<small>像素運動日誌</small></span></a>
+  <div class="sidebar-caption">YOUR EVERYDAY ADVENTURE</div>
+  <nav class="main-menu" aria-label="主要選單">
+    <a class="current" href="#dashboard" aria-label="運動主畫面"><svg><use href="#i-route"/></svg><span>運動主畫面</span><b>◀</b></a>
+    <a href="#analysis" aria-label="我的運動分析"><svg><use href="#i-chart"/></svg><span>我的運動分析</span></a>
+    <a href="#design-system" aria-label="設計與元件"><svg><use href="#i-spark"/></svg><span>設計與元件</span></a>
+    <button type="button" data-open="settings" aria-label="運動設定"><svg><use href="#i-gear"/></svg><span>運動設定</span></button>
+  </nav>
+  <div class="side-note"><span class="pixel-star">✦</span><p>冒險不必很遠。<br>今天，從校園出發。</p><div class="tiny-rule"></div><span class="mono">LOCAL PREVIEW / 01</span></div>
+  <a class="original-link" href="../">← 回到目前的 PACE</a>
+</aside>
+
+<div class="app-shell">
+  <header class="topbar"><span class="breadcrumb">個人運動日誌 <span>/</span> 像素風格範本</span><div class="top-actions"><span class="preview-badge"><i></i> 互動示範</span><button class="avatar-button" data-open="settings" aria-label="開啟運動設定"><span class="mini-avatar" aria-hidden="true"></span><span id="headerName">LEO</span></button></div></header>
+  <main>
+    <section class="page-heading" id="dashboard"><div><p class="eyebrow">A LITTLE MOVEMENT, A NEW CHAPTER.</p><h1>今天的冒險，<span>從一步開始。</span></h1><p class="heading-copy">照自己的節奏，收集一段屬於你的校園路線。</p></div><div class="weather"><svg><use href="#i-sun"/></svg><span class="mono">PACE / FIELD NOTES<small>步行與跑步 · 個人紀錄</small></span></div></section>
+
+    <div class="prototype-note"><span class="mono">DEMO</span><p>這是可操作的視覺範本。使用示範數據，不啟用定位，也不儲存你的運動紀錄。</p><button data-open="about" aria-label="查看範本說明">範本說明 ↗</button></div>
+
+    <div class="workout-layout">
+      <section class="pixel-window map-window" aria-labelledby="routeTitle"><header class="window-title"><span><svg><use href="#i-route"/></svg><h2 id="routeTitle">校園探索地圖</h2></span><span class="window-code mono">MAP_01 <i></i><i></i></span></header><div class="map-legend"><span><i class="legend-route"></i> 示範路線</span><span class="mono">TOP-DOWN / PIXEL WORLD</span></div><div class="pixel-map"><img src="map.svg" alt="復古像素校園示意地圖，包含操場、林蔭步道與水池，並非真實地理位置" width="960" height="520"><span class="map-label"><svg><use href="#i-flag"/></svg> 綠蔭步道</span><span class="map-position" aria-hidden="true"><span class="runner"></span><b>YOU</b></span><div class="map-stamp mono">PIXEL MAP<br><span>僅作視覺示意</span></div></div><div class="map-footer"><span class="signal-dot"></span><span>在這裡，每一步都算數。</span><span class="map-coordinates mono">CAMPUS · 01</span></div></section>
+
+      <section class="pixel-window session-window" aria-labelledby="sessionTitle"><header class="window-title dark"><span><svg><use href="#i-boot"/></svg><h2 id="sessionTitle">本次運動</h2></span><span class="status-chip" id="sessionStatus">準備出發</span></header><div class="session-body"><div class="mode-switch" role="group" aria-label="活動方式"><button class="selected" data-mode="walk" aria-pressed="true">步行 WALK</button><button data-mode="run" aria-pressed="false">跑步 RUN</button></div><div class="distance-display"><span class="field-label">累積距離 / DISTANCE</span><div><strong id="distance">1.28</strong><span>km</span></div></div><div class="session-stats"><div><span>運動時間</span><strong class="mono" id="elapsed">17:04</strong><small>不含暫停</small></div><div><span>平均速度</span><strong class="mono"><b id="speed">4.5</b><em>km/h</em></strong><small>依示範數據計算</small></div></div><div class="energy-line"><span><svg><use href="#i-heart"/></svg> 總消耗 <button class="info-button" data-open="energy" aria-label="查看熱量說明">?</button></span><strong class="mono"><b id="energyValue">56</b><small>kcal</small></strong></div><div class="progress-caption"><span>示範里程</span><span class="mono" id="distanceProgressLabel">1.28 / 2.00 km</span></div><div class="pixel-progress" role="progressbar" aria-label="示範里程進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64"><span id="distanceProgress" style="width:64%"></span></div><p class="session-hint" id="sessionHint">按下開始，看看像素介面如何回應。</p><button class="pixel-button primary wide" id="startDemo"><span class="play-symbol">▶</span><span id="startLabel">開始模擬運動</span><span>→</span></button><div class="session-secondary"><button class="text-button" id="resetDemo">↺ 重設示範</button><button class="text-button" data-open="settings">運動設定 ↗</button></div></div></section>
+    </div>
+
+    <section class="analysis-section" id="analysis"><div class="section-heading"><div><p class="eyebrow">LOOK BACK AT YOUR JOURNEY</p><h2>不只走過，也看懂。</h2></div><span class="section-tag mono">ACTIVITY REPORT</span></div><div class="pixel-window"><div class="pixel-tabs" role="tablist" aria-label="分析內容"><button role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" tabindex="0" data-tab="overview">運動摘要</button><button role="tab" id="tab-energy" aria-controls="panel-energy" aria-selected="false" tabindex="-1" data-tab="energy">熱量比較</button><button role="tab" id="tab-route" aria-controls="panel-route" aria-selected="false" tabindex="-1" data-tab="route">軌跡品質</button></div><div class="tab-body">
+      <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0"><div class="report-grid"><article class="report-card"><span class="report-icon"><svg><use href="#i-route"/></svg></span><div><span>這一段路</span><strong id="reportDistance">1.28 <small>km</small></strong><p>距離隨模擬運動更新</p></div></article><article class="report-card"><span class="report-icon blue"><svg><use href="#i-chart"/></svg></span><div><span>你的運動節奏</span><strong id="reportMode">輕鬆步行</strong><p>由你選擇步行或跑步</p></div></article><article class="report-card"><span class="report-icon orange"><svg><use href="#i-heart"/></svg></span><div><span>資料保存在本機</span><strong>這次只試風格</strong><p>不寫入正式運動紀錄</p></div></article></div><div class="report-note"><span class="mono">NOTE</span> 真正的路程，留給下一次出發。此處數字皆為原型展示。</div></div>
+      <div role="tabpanel" id="panel-energy" aria-labelledby="tab-energy" tabindex="0" hidden><div class="energy-report"><div><p class="eyebrow">ENERGY BREAKDOWN</p><h3>把消耗拆開看。</h3><p>示範數字隨模擬速度、時間與設定體重更新。<br>這個範本不模擬定位缺口。</p><button class="text-button" data-open="energy">查看估算方式 ↗</button></div><dl class="comparison"><div><dt>總消耗</dt><dd><b id="totalKcal">56.3</b><small>kcal</small></dd></div><div><dt>標準休息消耗</dt><dd><b id="restKcal">17.9</b><small>kcal</small></dd></div><div class="net"><dt>活動淨消耗</dt><dd><b id="netKcal">38.4</b><small>kcal</small></dd></div></dl></div></div>
+      <div role="tabpanel" id="panel-route" aria-labelledby="tab-route" tabindex="0" hidden><div class="quality-panel"><div><span class="quality-badge">DEMO DATA</span><h3>路線清楚，數據才有意義。</h3><p>正式版會保存有效點、篩選原因與斷段事件。這張像素地圖只是風格示意，沒有接收 GPS。</p></div><div class="quality-list"><span><i></i> 距離與速度驗算</span><span><i></i> 定位缺口與斷段說明</span><span><i></i> 原始定位點保留</span></div></div></div>
+    </div></div></section>
+
+    <section id="design-system" class="design-section"><div class="section-heading"><div><p class="eyebrow">THE LITTLE DETAILS</p><h2>同一套像素，一致的冒險感。</h2></div><span class="section-tag mono">DESIGN SYSTEM / v01</span></div><div class="design-grid"><article class="pixel-window token-window"><header class="window-title"><span><h3>01 · 色彩與比例</h3></span><span class="mono">PALETTE</span></header><div class="token-body"><div class="swatches"><div><i style="background:var(--ink)"></i><span>森林墨綠</span><code>#293E35</code></div><div><i style="background:var(--paper)"></i><span>暖色羊皮紙</span><code>#FAF6E5</code></div><div><i style="background:var(--orange)"></i><span>日落橘</span><code>#D57B45</code></div><div><i style="background:var(--sage)"></i><span>草地綠</span><code>#9FB787</code></div><div><i style="background:var(--blue)"></i><span>湖水藍</span><code>#718FA1</code></div></div><div class="token-row"><span>像素單位 <b class="mono">4 px</b></span><span>硬邊框 <b class="mono">2 px</b></span><span>硬陰影 <b class="mono">4 px</b></span></div><p class="design-note">英數保留復古節奏，中文使用清楚的現代字體。地圖、角色與圖示保持清晰硬邊。</p></div></article><article class="pixel-window"><header class="window-title"><span><h3>02 · 按鈕與視窗</h3></span><span class="mono">COMPONENTS</span></header><div class="token-body"><div class="button-samples"><button class="pixel-button primary" id="sampleAction">主要操作 →</button><button class="pixel-button" data-open="about">開啟視窗</button><button class="pixel-button" disabled>尚未開放</button></div><p class="design-note">滑過浮起，按下落地；鍵盤也能操作。試試上方分頁，以及這裡的遊戲視窗。</p><div class="sample-progress-row"><span>元件互動進度</span><b class="mono" id="sampleCount">0 / 5</b></div><div class="pixel-progress small" role="progressbar" aria-label="元件互動進度" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"><span id="sampleProgress" style="width:0%"></span></div></div></article></div></section>
+    <footer class="footer"><span><b class="mono">PACE</b> 每一次出發，都是新的紀錄。</span><span>像素介面範本 · 未套用正式網站 <a href="design-system.md">設計規格 ↗</a></span></footer>
+  </main>
+</div>
+
+<dialog class="pixel-dialog" id="settings" aria-labelledby="settingsTitle"><header class="window-title dark"><h2 id="settingsTitle">運動設定 / SETTINGS</h2><button class="window-close" data-close aria-label="關閉設定">×</button></header><form id="settingsForm" class="dialog-body"><p class="dialog-intro">調整這個範本的顯示。設定只在本頁暫存。</p><label for="nickname">你的暱稱<input id="nickname" maxlength="12" value="LEO" required></label><label for="weight">示範體重 <span>kg</span><input id="weight" type="number" min="20" max="250" step="0.1" value="60" required></label><p class="design-note">體重僅用來展示熱量數字的變化；不儲存、不傳送。</p><div class="dialog-actions"><button class="pixel-button" type="button" data-close>返回</button><button class="pixel-button primary" type="submit">套用設定 ✓</button></div></form></dialog>
+<dialog class="pixel-dialog" id="energy" aria-labelledby="energyTitle"><header class="window-title dark"><h2 id="energyTitle">熱量說明 / ENERGY</h2><button class="window-close" data-close aria-label="關閉熱量說明">×</button></header><div class="dialog-body"><span class="quality-badge">PREVIEW ONLY</span><h3>這是一個介面範本。</h3><p>示範依步行／跑步速度與設定體重，以平地 ACSM 公式呈現總消耗、休息消耗與淨消耗的視覺層次。它不代表實際測量。</p><div class="formula-box mono">總消耗 = 休息消耗 + 活動淨消耗</div><p>正式網站的定位、缺口補估與原有運動紀錄，均沒有被這個範本更動。</p><button class="pixel-button primary wide" data-close>了解，繼續探索 →</button></div></dialog>
+<dialog class="pixel-dialog" id="about" aria-labelledby="aboutTitle"><header class="window-title dark"><h2 id="aboutTitle">範本說明 / PREVIEW</h2><button class="window-close" data-close aria-label="關閉範本說明">×</button></header><div class="dialog-body"><div class="dialog-spark"><svg><use href="#i-spark"/></svg></div><h3>先試風格，再開始冒險。</h3><p>這份設計採用像素視窗、硬邊框、整數倍率的像素圖示與 RPG 選單，同時保留中文閱讀與手機操作的便利。</p><ul><li>可操作：模擬開始／暫停、步行／跑步、分析分頁、設定與彈窗。</li><li>僅示意：校園地圖、路線、角色與數據。</li><li>沒有啟用：GPS、資料儲存、好友、排名或經驗值。</li></ul><button class="pixel-button primary wide" data-close>繼續看看 →</button></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

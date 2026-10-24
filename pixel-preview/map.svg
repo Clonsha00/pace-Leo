@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" shape-rendering="crispEdges">
+<defs>
+ <pattern id="grass" width="48" height="40" patternUnits="userSpaceOnUse"><rect width="48" height="40" fill="#b8cba1"/><path d="M8 8h4v4H8zm24 20h4v4h-4z" fill="#a1b98b"/><path d="M12 8h4v4h-4zm20 16h4v4h-4z" fill="#cad7ac"/></pattern>
+ <pattern id="paving" width="32" height="24" patternUnits="userSpaceOnUse"><rect width="32" height="24" fill="#e0d8b4"/><path d="M0 0h32v2H0zm15 0h2v12h-2zM0 12h32v2H0zm0 0h2v12H0z" fill="#cec5a0"/></pattern>
+ <symbol id="tree" viewBox="0 0 64 84"><path d="M12 56h40v12H12z" fill="#58734f" opacity=".25"/><path d="M28 48h12v32H28z" fill="#8d7350"/><path d="M32 48h4v32h-4z" fill="#6f5c43"/><path d="M20 4h24v8h8v8h8v32h-8v8H12v-8H4V24h8V12h8z" fill="#4e7350"/><path d="M20 8h24v8h8v28h-8v8H12V28h8z" fill="#6e925e"/><path d="M24 12h16v8h8v8H16v-8h8z" fill="#8ba973"/><path d="M12 36h8v8h-8zm24-8h8v8h-8z" fill="#a3b981"/></symbol>
+ <symbol id="pine" viewBox="0 0 48 76"><path d="M20 48h8v28h-8z" fill="#86704d"/><path d="M20 0h8v8h8v16h8v16h4v16H0V40h4V24h8V8h8z" fill="#4b7154"/><path d="M20 4h8v20h8v24H8V32h8V16h4z" fill="#749365"/><path d="M20 12h4v16h-4zm-8 28h8v8h-8z" fill="#95ad78"/></symbol>
+ <symbol id="bench" viewBox="0 0 56 28"><path d="M4 0h48v4H4zm0 8h48v4H4zm0 8h48v4H4z" fill="#a18052"/><path d="M12 20h4v8h-4zm28 0h4v8h-4z" fill="#5d674d"/><path d="M4 4h48v4H4zm0 8h48v4H4z" fill="#c8a16b"/></symbol>
+ <symbol id="flowers" viewBox="0 0 32 28"><path d="M4 16h4v12H4zm20-4h4v16h-4z" fill="#6d8c56"/><path d="M0 12h12v4H0zm4-4h4v12H4z" fill="#e4a165"/><path d="M20 8h12v4H20zm4-4h4v12h-4z" fill="#ebd38c"/></symbol>
+</defs>
+<rect width="960" height="520" fill="url(#grass)"/>
+<!-- 校園建物與操場，以 4 像素網格構圖。 -->
+<path d="M0 176h960v68H0zM348 0h68v520h-68zM696 0h60v520h-60z" fill="#99aa82"/>
+<path d="M0 184h960v52H0zM356 0h52v520h-52zM704 0h44v520h-44z" fill="url(#paving)"/>
+<rect x="40" y="32" width="264" height="120" fill="#8da276"/><path d="M64 44h216v12h12v80h-12v12H64v-12H52V56h12z" fill="#b78560"/><path d="M76 60h192v8h8v56h-8v8H76v-8H68V68h8z" fill="none" stroke="#ead6ac" stroke-width="4"/><path d="M92 72h160v48H92z" fill="#95ad79"/><path d="M172 72v48m-80-24h160" stroke="#d7e1b7" stroke-width="2"/><rect x="124" y="84" width="24" height="24" fill="none" stroke="#d7e1b7" stroke-width="2"/>
+<path d="M480 52h152v12h12v92H468V64h12z" fill="#6f7d71" opacity=".3"/><rect x="472" y="36" width="164" height="112" fill="#dfd8b1"/><path d="M464 32h180v24H464zM472 24h164v8H472z" fill="#71848b"/><rect x="484" y="64" width="140" height="12" fill="#b8bd9d"/><path d="M488 84h20v20h-20zm36 0h20v20h-20zm36 0h20v20h-20zm36 0h20v20h-20z" fill="#7f9c9b"/><path d="M488 84h20v4h-20zm36 0h20v4h-20zm36 0h20v4h-20zm36 0h20v4h-20z" fill="#4d6f71"/><rect x="540" y="116" width="28" height="32" fill="#7a795e"/><rect x="536" y="148" width="36" height="8" fill="#cec6a3"/>
+<!-- 水池與林蔭小徑。 -->
+<path d="M64 304h164v12h20v16h16v76h-16v16h-20v12H64v-12H44v-16H32v-76h12v-16h20z" fill="#9eac82"/><path d="M68 316h152v12h20v16h12v52h-12v16h-20v12H68v-12H48v-16H40v-52h8v-16h20z" fill="#7fa4ac"/><path d="M80 328h124v8H80zm-24 32h64v4H56zm100 24h68v4h-68zm-88 20h88v4H68z" fill="#adc7bc"/><path d="M212 344h12v8h-12zm-100 40h12v8h-12z" fill="#6f999c"/><path d="M208 336h12v8h-12zm-104 40h12v8h-12z" fill="#a6bc8a"/>
+<path d="M416 320h280v52H416z" fill="#96aa7e"/><path d="M416 328h280v36H416z" fill="url(#paving)"/><rect x="512" y="276" width="108" height="32" fill="#a3b789"/><rect x="520" y="280" width="92" height="24" fill="#8fa673"/>
+<use href="#bench" x="528" y="292" width="56" height="28"/><use href="#bench" x="444" y="392" width="56" height="28"/>
+<rect x="796" y="288" width="112" height="144" fill="#c0ad85"/><rect x="804" y="296" width="96" height="128" fill="#9fae8d"/><path d="M812 304h80v112h-80zM812 360h80M852 304v112" fill="none" stroke="#e4e4bd" stroke-width="3"/><path d="M836 344h32v32h-32z" fill="none" stroke="#e4e4bd" stroke-width="3"/>
+<!-- 示範路徑與方形定位點，不代表真實 GPS。 -->
+<path d="M288 212h92v136h344V212h108" fill="none" stroke="#f3e7c9" stroke-width="14"/><path d="M288 212h92v136h344V212h108" fill="none" stroke="#ce7a47" stroke-width="6" stroke-dasharray="12 8"/><rect x="276" y="200" width="24" height="24" fill="#365a43"/><rect x="284" y="208" width="8" height="8" fill="#f5efda"/><rect x="820" y="200" width="24" height="24" fill="#557d8b"/><rect x="828" y="208" width="8" height="8" fill="#f5efda"/>
+<!-- 重複使用樹木與植物元件。 -->
+<use href="#tree" x="12" y="84" width="64" height="84"/><use href="#tree" x="272" y="72" width="64" height="84"/><use href="#tree" x="304" y="0" width="64" height="84"/>
+<use href="#pine" x="420" y="72" width="48" height="76"/><use href="#pine" x="652" y="80" width="48" height="76"/>
+<use href="#tree" x="780" y="40" width="64" height="84"/><use href="#tree" x="836" y="68" width="64" height="84"/><use href="#tree" x="888" y="36" width="64" height="84"/>
+<use href="#tree" x="24" y="224" width="64" height="84"/><use href="#tree" x="268" y="256" width="64" height="84"/><use href="#tree" x="276" y="400" width="64" height="84"/>
+<use href="#tree" x="408" y="228" width="64" height="84"/><use href="#tree" x="600" y="236" width="64" height="84"/><use href="#pine" x="644" y="392" width="48" height="76"/>
+<use href="#tree" x="408" y="432" width="64" height="84"/><use href="#tree" x="512" y="424" width="64" height="84"/><use href="#tree" x="584" y="444" width="64" height="84"/>
+<use href="#tree" x="760" y="412" width="64" height="84"/><use href="#tree" x="868" y="432" width="64" height="84"/>
+<use href="#flowers" x="104" y="264" width="32" height="28"/><use href="#flowers" x="220" y="456" width="32" height="28"/><use href="#flowers" x="460" y="24" width="32" height="28"/><use href="#flowers" x="624" y="440" width="32" height="28"/><use href="#flowers" x="772" y="236" width="32" height="28"/>
+<path d="M860 164h24v4h-24zm8-8h8v20h-8zM112 472h16v4h-16zm4-4h8v12h-8z" fill="#d4dba8"/>
+</svg>

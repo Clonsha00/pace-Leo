@@ -1,0 +1,48 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const core=require('../core.js');
+const nodes=new Map();
+const element=()=>({children:[],textContent:'',hidden:false,append(...c){this.children.push(...c);},replaceChildren(){this.children=[];},addEventListener(){}});
+const document={getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);},createElement:element,addEventListener(){}};
+const ctx={MoveCore:core,document};vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../review.js'),'utf8').replace("  $('file').addEventListener", "  globalThis.analyze=analyzeTrack;globalThis.showAnalysis=showAnalysis;globalThis.showBreaks=showBreaks;\n  $('file').addEventListener"),ctx);
+const point=(lng,t,segment=0)=>({lat:0,lng,t,segment});
+const points=[point(0,0),point(.0001,10000),point(1,20000,1),point(1.0002,30000,1)];
+const expected=6371000*Math.PI/180*.0003;
+let r={points,meters:expected+1,seconds:60};
+let a=ctx.analyze(r);
+assert.ok(Math.abs(a.meters-expected)<1e-8); // Do not include the large break between segments.
+assert.equal(a.fastest.from,3);assert.equal(a.fastest.to,4);
+assert.ok(Math.abs(a.fastest.speed-(6371000*Math.PI/180*.0002/10))<1e-8);
+assert.ok(Math.abs(a.difference-1)<1e-8);
+assert.ok(Math.abs(a.percent-100/(expected+1))<1e-8);
+assert.ok(Math.abs(a.direct-6371000*Math.PI/180*1.0002)<1e-8);
+ctx.showAnalysis(r);
+assert.equal(nodes.get('fastestPoints').children.length,2);
+assert.equal(nodes.get('fastestPoints').children[0].children[0].textContent,'3');
+assert.equal(nodes.get('fastestPoints').children[0].children[1].textContent,'20000');
+assert.equal(nodes.get('fastestPoints').children[0].children[2].textContent,'1970-01-01T00:00:20.000Z');
+const has=text=>nodes.get('analysisFacts').children.some(x=>x.textContent.includes(text));
+assert.ok(has('未超過 8 m/s'));
+r={...r,meters:expected-1};assert.ok(ctx.analyze(r).percent<0);
+ctx.showAnalysis({points:[points[0]],meters:0,seconds:0});
+assert.ok(has('不能作為除數'));assert.ok(has('無法計算'));
+assert.equal(nodes.get('fastestEvidence').hidden,true);assert.equal(nodes.get('fastestPoints').children.length,0);
+a=ctx.analyze({points:[point(0,10),point(.0001,10)],meters:1});
+assert.equal(a.invalidTimes,1);assert.equal(a.fastest,null);assert.ok(a.meters>0);
+a=ctx.analyze({points:[point(0,undefined),point(.0001,20)],meters:1});assert.equal(a.invalidTimes,1);
+ctx.showAnalysis({points:[point(0,0),point(.001,1000)],meters:1,seconds:1});
+assert.ok(has('超過 8 m/s，請核對'));
+a=ctx.analyze({points:[point(0,0),point(.0001,31000)],meters:1});assert.equal(a.longIntervals,1);
+// All original recording calculations still operate independently of review analysis.
+console.log('Distance verification, signed percentages, segment boundaries, fastest evidence, missing times and zero-distance checks passed.');
+
+ctx.showBreaks({points});assert.match(nodes.get('breakNote').textContent,/舊紀錄/);
+ctx.showBreaks({points,breakEvents:[]});assert.match(nodes.get('breakNote').textContent,/未記錄到/);
+ctx.showBreaks({points,breakEvents:[{reason:'manual_pause',at:1000,fromPoint:2,toPoint:3,resumedAt:2000},{reason:'geolocation_error',at:3000,errorCode:3,fromPoint:4,toPoint:null,resumedAt:null}]});
+assert.equal(nodes.get('breakRows').children.length,2);
+assert.match(nodes.get('breakRows').children[0].children[2].textContent,/第 2 點/);
+assert.match(nodes.get('breakRows').children[1].children[0].textContent,/定位逾時/);
+assert.equal(nodes.get('breakRows').children[1].children[3].textContent,'未取得有效點');
+assert.equal(nodes.get('breakRows').children[1].children[4].textContent,'未記錄');
+ctx.showBreaks({points});assert.equal(nodes.get('breakRows').children.length,0);
+console.log('Break detail rendering, old records and unfinished resume handling passed.');

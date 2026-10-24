@@ -9,9 +9,9 @@ async function authorized(request,secret){
 export default {
   async fetch(request,env){
     const path=new URL(request.url).pathname;
-    if(path==='/api/config')return json({mode:'cloud',requiresToken:true,captureFeedback:true,encounterSync:true});
+    if(path==='/api/config')return json({mode:'cloud',requiresToken:true,captureFeedback:true,encounterSync:true,deviceStatus:2});
     if(!path.startsWith('/api/'))return env.ASSETS.fetch(request);
-    if(!['/api/last','/api/throw','/api/result','/api/encounter'].includes(path))return json({error:'not found'},404);
+    if(!['/api/last','/api/throw','/api/result','/api/encounter','/api/device'].includes(path))return json({error:'not found'},404);
     if(!env.RELAY_TOKEN||env.RELAY_TOKEN.length<32)return json({error:'請先設定 Cloudflare RELAY_TOKEN secret'},503);
     if(!await authorized(request,env.RELAY_TOKEN))return json({error:'連線金鑰不正確'},401);
     return env.THROWS.get(env.THROWS.idFromName('owner-relay-v1')).fetch(request);
@@ -21,6 +21,15 @@ export class ThrowRelay {
   constructor(ctx){this.ctx=ctx;}
   async fetch(request){
     const path=new URL(request.url).pathname;
+    if(path==='/api/device'&&request.method==='GET'){
+      const sequence=Number(new URL(request.url).searchParams.get('sequence')||0);
+      if(!Number.isSafeInteger(sequence)||sequence<0)return json({error:'invalid sequence'},400);
+      const snapshot=await this.ctx.storage.transaction(async tx=>({state:await tx.get('state'),e:await tx.get('encounter')}));
+      const active=!!snapshot.e?.active&&Date.now()-snapshot.e.updated<45000;
+      const state=snapshot.state;
+      const value=!sequence?'idle':state?.sequence!==sequence?'stale':state.result?(state.result.success?'success':'failure'):'pending';
+      return new Response(value,{headers:{'Content-Type':'text/plain','Cache-Control':'no-store','X-Encounter-State':active?'present':'none','X-Encounter-Id':active?snapshot.e.id:'','X-Device-Status':'2'}});
+    }
     if(path==='/api/encounter'&&request.method==='GET'){
       const e=await this.ctx.storage.get('encounter');
       return new Response(e?.active&&Date.now()-e.updated<45000?'present':'none',{headers:{'Content-Type':'text/plain','Cache-Control':'no-store'}});
@@ -60,22 +69,33 @@ export class ThrowRelay {
         if(Date.now()/1000-state.event.at>30)return 410;
         if(state.result)return state.result.success===data.success?200:409;
         state.result={sequence:data.sequence,success:data.success,at:Date.now()/1000};
-        await tx.put('state',state);return 200;
+        await tx.put('state',state);
+        if(data.success&&state.event.encounterId){
+          const e=await tx.get('encounter');
+          if(e?.id===state.event.encounterId)await tx.put('encounter',{...e,active:false,closed:true,updated:Date.now()});
+        }
+        return 200;
       });
       return json({ok:outcome===200},outcome);
     }
     if(!data||Array.isArray(data)||data.event!=='throw')return json({error:'event must be throw'},400);
     const metrics={};
+    if(data.encounter_id!==undefined&&(typeof data.encounter_id!=='string'||!/^[-a-zA-Z0-9]{1,80}$/.test(data.encounter_id)))return json({error:'invalid encounter_id'},400);
     for(const key of ['peak_g','accel_g','motion_score','duration_ms'])if(key in data){if(!Number.isFinite(data[key])||data[key]<0||data[key]>100000)return json({error:'invalid '+key},400);metrics[key]=data[key];}
     metrics.peak_g??=metrics.accel_g;if(!Number.isFinite(metrics.peak_g))return json({error:'missing peak_g'},400);
     const result=await this.ctx.storage.transaction(async tx=>{
       const old=await tx.get('state')||{boot:'cloud-v1',sequence:0,event:null};
+      if(data.encounter_id!==undefined){
+        const e=await tx.get('encounter');
+        if(!e?.active||e.id!==data.encounter_id||Date.now()-e.updated>=45000)return {conflict:true};
+      }
       const now=Date.now()/1000;
       if(old.event&&now-old.event.at<.5)return null;
-      const state={boot:old.boot,sequence:old.sequence+1,event:{...metrics,type:'throw',at:now},result:null};
+      const state={boot:old.boot,sequence:old.sequence+1,event:{...metrics,type:'throw',at:now,...(data.encounter_id?{encounterId:data.encounter_id}:{})},result:null};
       await tx.put('state',state);return state;
     });
     if(!result)return json({error:'too many throws'},429);
+    if(result.conflict)return json({error:'encounter closed or changed'},409);
     const response=json({ok:true,sequence:result.sequence});response.headers.set('X-Throw-Sequence',String(result.sequence));return response;
   }
 }

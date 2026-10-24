@@ -4,6 +4,64 @@
   const distanceTest=new CaptureGame();let testMeters=0;
   let collection=[],enabled=false,controller=null,connectionEpoch=null,sequence=null,cloudMode=false;
   let encounterId=null,lastEncounterSync=0,syncQueue=Promise.resolve(),encounterCounter=0;
+  let webSocketSupported=false,socket=null,socketReady=false,socketGeneration=0,reconnectTimer=null,reconnectAttempt=0,lastSocketMessage=0;
+  let commandCounter=0,lastRoundTrip=null;const commands=new Map();
+  const timings=[];window.PaceTransferTiming={samples:()=>timings.map(x=>({...x}))};
+  function stopSocket(){
+    socketGeneration++;clearTimeout(reconnectTimer);socketReady=false;
+    const old=socket;socket=null;old?.close();
+    for(const p of commands.values()){clearTimeout(p.timer);p.reject(Error('連線中斷'));}commands.clear();
+  }
+  function socketCommand(op,data){
+    if(!socketReady||socket?.readyState!==WebSocket.OPEN)return Promise.reject(Error('長連線尚未就緒'));
+    const id='p-'+(++commandCounter),started=performance.now();
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{commands.delete(id);reject(Error('回應逾時'));},4000);
+      commands.set(id,{resolve,reject,timer,started,op});
+      try{socket.send(JSON.stringify({op,id,data}));}catch(e){clearTimeout(timer);commands.delete(id);reject(e);}
+    });
+  }
+  async function relayPost(op,data,token){
+    if(socketReady&&token===el('relayToken').value.trim()){
+      const ack=await socketCommand(op,data);return {ok:ack.status>=200&&ack.status<300,status:ack.status,roundTripMs:ack.roundTripMs};
+    }
+    const started=performance.now();
+    const r=await fetch('/api/'+op,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.timeout(4000)});
+    lastRoundTrip=Math.round(performance.now()-started);timings.push({transport:'https',op,roundTripMs:lastRoundTrip});if(timings.length>20)timings.shift();return {ok:r.ok,status:r.status,roundTripMs:lastRoundTrip};
+  }
+  function startSocket(){
+    if(!enabled||!webSocketSupported||document.hidden)return;
+    stopSocket();const generation=socketGeneration;
+    const url=new URL('/api/socket',location.href);url.protocol=url.protocol==='https:'?'wss:':'ws:';
+    const ws=socket=new WebSocket(url);lastSocketMessage=Date.now();
+    ws.onopen=()=>{if(generation===socketGeneration)ws.send(JSON.stringify({op:'auth',token:el('relayToken').value.trim()}));};
+    ws.onmessage=e=>{
+      if(generation!==socketGeneration||!enabled||document.hidden)return;
+      let d;try{d=JSON.parse(e.data);}catch{ws.close();return;}lastSocketMessage=Date.now();
+      if(d.type==='ready'){socketReady=true;reconnectAttempt=0;return;}
+      if(d.type==='ack'){
+        const pending=commands.get(d.id);if(!pending)return;commands.delete(d.id);clearTimeout(pending.timer);
+        lastRoundTrip=Math.round(performance.now()-pending.started);timings.push({transport:'websocket',op:pending.op,roundTripMs:lastRoundTrip});if(timings.length>20)timings.shift();pending.resolve({...d,roundTripMs:lastRoundTrip});return;
+      }
+      if(d.type==='snapshot'&&socketReady){
+        if(d.reason==='hello'){sequence=null;connectionEpoch=null;}
+        receiveEvent(d);
+        if(game.encounter&&(!encounterId||Date.now()-lastEncounterSync>15000))notifyEncounter(true);
+      }
+    };
+    ws.onerror=()=>ws.close();
+    ws.onclose=e=>{
+      if(generation!==socketGeneration)return;
+      stopSocket();sequence=null;connectionEpoch=null;
+      if(e.code===1008){enabled=false;el('relayToken').disabled=false;el('m5Connect').textContent='連接 M5 接收服務';status('長連線驗證失敗，請確認連線金鑰後重新連接。');return;}
+      if(enabled&&!document.hidden){status('長連線暫時中斷，正在重新連接…');reconnectTimer=setTimeout(startSocket,Math.min(10000,1000*2**Math.min(reconnectAttempt++,4)));}
+    };
+  }
+  setInterval(()=>{
+    if(!enabled||!webSocketSupported||document.hidden||!socket)return;
+    if(Date.now()-lastSocketMessage>12000){socket.close();return;}
+    if(socketReady){socket.send(JSON.stringify({op:'sync'}));if(game.encounter&&Date.now()-lastEncounterSync>15000)notifyEncounter(true);}
+  },5000);
   function notifyEncounter(active){
     if(!enabled||!cloudMode||(!encounterId&&!active))return;
     if(active&&!encounterId)encounterId=globalThis.crypto?.randomUUID?.()||Date.now()+'-'+(++encounterCounter);
@@ -11,7 +69,7 @@
     if(!active)encounterId=null;
     syncQueue=syncQueue.catch(()=>{}).then(async()=>{
       try{
-        const r=await fetch('/api/encounter',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id,active}),signal:AbortSignal.timeout(4000)});
+        const r=await relayPost('encounter',{id,active},token);
         if(!r.ok)throw Error('HTTP '+r.status);
       }catch{if(encounterId===id||(!active&&!encounterId))status('M5 遭遇狀態同步失敗；請保持網頁前景並確認雲端連線。');}
     });
@@ -73,8 +131,8 @@
   async function reportResult(eventSequence,success,token,generation){
     for(let attempt=0;attempt<3;attempt++){
       try{
-        const r=await fetch('/api/result',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sequence:eventSequence,success}),signal:AbortSignal.timeout(4000)});
-        if(r.ok){if(game.generation===generation&&sequence===eventSequence)status(`第 ${eventSequence} 球結果已送至雲端：${success?'成功':'失敗'}，等待 M5 讀取。`);return;}
+        const r=await relayPost('result',{sequence:eventSequence,success},token);
+        if(r.ok){if(game.generation===generation&&sequence===eventSequence)status(`第 ${eventSequence} 球結果已送至雲端：${success?'成功':'失敗'}，回應 ${r.roundTripMs??'—'} ms。`);return;}
         if(r.status<500)break;
       }catch{}
       if(attempt<2)await new Promise(resolve=>setTimeout(resolve,500));
@@ -88,34 +146,27 @@
       el('m5Connect').disabled=true;
       try{
         const r=await fetch('/api/config',{cache:'no-store',signal:AbortSignal.timeout(5000)});
-        cloudMode=r.ok&&(await r.json()).mode==='cloud';
+        const config=r.ok?await r.json():{};cloudMode=config.mode==='cloud';webSocketSupported=cloudMode&&config.webSocket===1;
       }catch{status('無法確認接收服務，請檢查網路後重新連接。');return;}
       finally{el('m5Connect').disabled=false;}
       if(cloudMode&&el('relayToken').value.trim().length<32){status('請先填入 Cloudflare 設定的連線金鑰（至少 32 字元）。');return;}
       try{sessionStorage.setItem('pace-relay-token',el('relayToken').value.trim());}catch{}
     }
     if(enabled)notifyEncounter(false);
-    enabled=!enabled;sequence=null;connectionEpoch=null;controller?.abort();
+    stopSocket();enabled=!enabled;sequence=null;connectionEpoch=null;controller?.abort();
     el('relayToken').disabled=enabled;
     el('m5Connect').textContent=enabled?'中斷 M5 接收':'連接 M5 接收服務';
     status(enabled?(cloudMode?'正在連接雲端接收服務…':'正在連接電腦接收服務…'):'尚未連接；可先用模擬投球測試。');
+    if(enabled&&webSocketSupported)startSocket();
   };
   document.addEventListener('visibilitychange',()=>{
     sequence=null;connectionEpoch=null;controller?.abort();
-    if(document.hidden)notifyEncounter(false);
-    else if(game.encounter)notifyEncounter(true);
+    if(document.hidden){notifyEncounter(false);stopSocket();}
+    else {if(webSocketSupported)startSocket();if(game.encounter)notifyEncounter(true);}
   });
-  async function poll(){
-    if(enabled&&!document.hidden){
-      controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),2500);
-      try{
-        const headers=cloudMode?{Authorization:'Bearer '+el('relayToken').value.trim()}:{};
-        const r=await fetch('/api/last',{cache:'no-store',headers,signal:controller.signal});
-        if(!r.ok){if(r.status===401){enabled=false;el('relayToken').disabled=false;el('m5Connect').textContent='連接 M5 接收服務';status('連線金鑰不正確，請確認與 Cloudflare RELAY_TOKEN 相同。');return;}throw Error('接收服務 HTTP '+r.status);}
-        const d=await r.json();if(!Number.isInteger(d.sequence)||typeof d.boot!=='string')throw Error('請使用整合版接收服務');
-        if(!enabled)return;
-        if(cloudMode&&game.encounter&&(!encounterId||Date.now()-lastEncounterSync>15000))notifyEncounter(true);
-        if(connectionEpoch!==d.boot||sequence===null||d.sequence<sequence){connectionEpoch=d.boot;sequence=d.sequence;status(`已連接，事件序號 ${sequence}；現在可用 M5 投球。`);return;}
+  function receiveEvent(d){
+    if(!Number.isInteger(d.sequence)||typeof d.boot!=='string')return;
+        if(connectionEpoch!==d.boot||sequence===null||d.sequence<sequence){connectionEpoch=d.boot;sequence=d.sequence;status(`已連接${webSocketSupported?'（即時長連線）':''}，事件序號 ${sequence}；現在可用 M5 投球。`);return;}
         if(d.sequence>sequence){
           sequence=d.sequence;
           // Compare server timestamps with each other, not a cached phone/server clock offset.
@@ -127,6 +178,18 @@
           else if(!Number.isFinite(age)||age<0||age>5000||age>encounterAge+150)status(`收到第 ${sequence} 球，但事件已過期或早於角色出現，請重新投球。`);
           else {status(`收到第 ${sequence} 球，正在捕捉。`);onThrow(d.event,false,sequence);}
         }
+  }
+  async function poll(){
+    if(enabled&&!document.hidden&&!webSocketSupported){
+      controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),2500);
+      try{
+        const headers=cloudMode?{Authorization:'Bearer '+el('relayToken').value.trim()}:{};
+        const r=await fetch('/api/last',{cache:'no-store',headers,signal:controller.signal});
+        if(!r.ok){if(r.status===401){enabled=false;el('relayToken').disabled=false;el('m5Connect').textContent='連接 M5 接收服務';status('連線金鑰不正確，請確認與 Cloudflare RELAY_TOKEN 相同。');return;}throw Error('接收服務 HTTP '+r.status);}
+        const d=await r.json();if(!Number.isInteger(d.sequence)||typeof d.boot!=='string')throw Error('請使用整合版接收服務');
+        if(!enabled)return;
+        if(cloudMode&&game.encounter&&(!encounterId||Date.now()-lastEncounterSync>15000))notifyEncounter(true);
+        receiveEvent(d);
       }catch(e){if(enabled){sequence=null;connectionEpoch=null;status('接收中斷：'+e.message+'；重連後請再投一次。');}}
       finally{clearTimeout(timeout);controller=null;setTimeout(poll,750);}
       return;

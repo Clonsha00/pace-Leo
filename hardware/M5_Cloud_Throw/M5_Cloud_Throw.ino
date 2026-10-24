@@ -1,6 +1,7 @@
 #include <M5StickCPlus.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -74,65 +75,83 @@ void deliver(const NetReply& reply) {
   xQueueSend(replies,&current,pdMS_TO_TICKS(50));
 }
 
-// Only this task performs HTTPS. Buttons, IMU, drawing and LED never wait for it.
+// V2.9: only this task owns the authenticated TLS WebSocket.
 void networkTask(void*) {
-  unsigned long pending=0,pendingRevision=0,pendingAt=0,lastPoll=0;
+  WebSocketsClient ws;
+  unsigned long pending=0,pendingRevision=0,lastHeartbeat=0,postAt=0;
+  unsigned int command=0;
+  bool authenticated=false,started=false,awaitingAck=false;
+  ThrowJob sentJob={};String requestId;
+  String base=apiUrl("");
+  if(!base.startsWith("https://")){
+    NetReply r={};r.kind=STATUS_REPLY;r.code=-1001;deliver(r);vTaskDelete(nullptr);return;
+  }
+  String host=base.substring(8);int slash=host.indexOf('/');if(slash>=0)host=host.substring(0,slash);
+  const String deviceBoot=String((unsigned long)ESP.getEfuseMac(),HEX)+"-"+String(esp_random(),HEX);
+  auto acknowledge=[&](int code,unsigned long sequence){
+    NetReply r={};r.kind=POST_REPLY;r.revision=sentJob.revision;r.code=code;r.sequence=sequence;
+    if(code==200&&sequence){pending=sequence;pendingRevision=sentJob.revision;}
+    awaitingAck=false;deliver(r);
+    Serial.printf("[timing] throw acknowledgement %lu ms HTTP=%d\n",millis()-postAt,code);
+  };
+  ws.onEvent([&](WStype_t type,uint8_t* payload,size_t length){
+    if(type==WStype_CONNECTED){
+      authenticated=false;JsonDocument auth;auth["op"]="auth";auth["token"]=RELAY_TOKEN;
+      String text;serializeJson(auth,text);ws.sendTXT(text);lastHeartbeat=millis();
+    }else if(type==WStype_DISCONNECTED){
+      authenticated=false;Serial.println("[socket] disconnected; reconnecting");
+    }else if(type==WStype_TEXT){
+      if(length>2048)return;JsonDocument d;if(deserializeJson(d,payload,length))return;
+      const char* kind=d["type"]|"";
+      if(strcmp(kind,"ready")==0){authenticated=true;lastHeartbeat=0;return;}
+      if(strcmp(kind,"error")==0){NetReply r={};r.kind=STATUS_REPLY;r.code=d["status"]|401;deliver(r);return;}
+      if(!authenticated)return;
+      if(strcmp(kind,"ack")==0){
+        if(awaitingAck&&requestId==d["id"].as<String>())acknowledge(d["status"]|0,d["sequence"]|0UL);
+        return;
+      }
+      if(strcmp(kind,"snapshot")!=0||!d["sequence"].is<unsigned long>()||!d["active"].is<bool>())return;
+      // Recover an ACK lost during reconnect, without resending the physical throw.
+      const char* throwId=d["event"]["throwId"]|"";
+      if(awaitingAck&&requestId==throwId)acknowledge(200,d["sequence"].as<unsigned long>());
+      NetReply r={};r.kind=STATUS_REPLY;r.code=200;r.protocol=true;r.active=d["active"];
+      snprintf(r.encounter,sizeof(r.encounter),"%s",d["encounterId"]|"");
+      r.sequence=pending;r.revision=pendingRevision;
+      const unsigned long serverSequence=d["sequence"]|0UL;
+      const char* result=!pending?"idle":serverSequence!=pending?"stale":d["result"].isNull()?"pending":d["result"]["success"].as<bool>()?"success":"failure";
+      snprintf(r.result,sizeof(r.result),"%s",result);deliver(r);
+      if(pending&&strcmp(result,"pending")!=0){
+        Serial.printf("[timing] throw to result %lu ms (includes phone animation)\n",millis()-postAt);pending=0;
+      }
+    }
+  });
+  ws.setReconnectInterval(1500);ws.enableHeartbeat(10000,3000,2);
   for(;;){
+    const bool wifi=WiFi.status()==WL_CONNECTED,clock=time(nullptr)>1700000000;
+    if(wifi&&clock){
+      if(!started){ws.beginSslWithCA(host.c_str(),443,"/api/socket",PACE_ROOT_CA,"");started=true;}
+      ws.loop();
+    }else{
+      if(started){ws.disconnect();started=false;authenticated=false;}
+      if(millis()-lastHeartbeat>=1500){NetReply r={};r.kind=STATUS_REPLY;r.code=0;deliver(r);lastHeartbeat=millis();}
+    }
+    const unsigned long now=millis();
+    if(authenticated&&now-lastHeartbeat>=4000){ws.sendTXT("{\"op\":\"sync\"}");lastHeartbeat=now;}
     ThrowJob job;
     if(xQueueReceive(jobs,&job,0)==pdTRUE){
-      NetReply r={};r.kind=POST_REPLY;r.revision=job.revision;
-      r.wifi=WiFi.status()==WL_CONNECTED;r.clockReady=time(nullptr)>1700000000;
-      String url=apiUrl("/api/throw");
-      if(!url.length())r.code=-1001;
-      if(r.wifi&&r.clockReady&&url.length()){
-        WiFiClientSecure client;client.setCACert(PACE_ROOT_CA);client.setHandshakeTimeout(4);
-        HTTPClient http;http.setConnectTimeout(3000);http.setTimeout(4000);
-        if(http.begin(client,url)){
-          const char* headers[]={"X-Throw-Sequence"};http.collectHeaders(headers,1);
-          http.addHeader("Authorization",String("Bearer ")+RELAY_TOKEN);
-          http.addHeader("Content-Type","application/json");
-          String body=String("{\"event\":\"throw\",\"encounter_id\":\"")+job.encounter+
-            "\",\"peak_g\":"+String(job.peak,2)+",\"motion_score\":"+String(job.score,3)+
-            ",\"duration_ms\":"+String(job.duration)+"}";
-          r.code=http.POST(body);
-          const long seq=r.code==200?http.header("X-Throw-Sequence").toInt():0;
-          r.sequence=seq>0?(unsigned long)seq:0;
-          http.end();
-        }
+      sentJob=job;postAt=now;requestId=deviceBoot+"-"+String(++command);
+      if(!authenticated){acknowledge(-1010,0);}
+      else{
+        JsonDocument d;d["op"]="throw";d["id"]=requestId;
+        auto data=d["data"].to<JsonObject>();data["event"]="throw";data["throw_id"]=requestId;
+        data["encounter_id"]=job.encounter;data["peak_g"]=job.peak;data["motion_score"]=job.score;data["duration_ms"]=job.duration;
+        String text;serializeJson(d,text);awaitingAck=true;
+        if(!ws.sendTXT(text))acknowledge(-1010,0);
       }
-      if(r.code==200&&r.sequence){pending=r.sequence;pendingRevision=job.revision;pendingAt=millis();lastPoll=0;}
-      deliver(r);
     }
-    if(pending&&millis()-pendingAt>RESULT_MS+5000)pending=0;
-    const unsigned long now=millis();
-    if(now-lastPoll>=(pending?750:1500)){
-      lastPoll=now;
-      NetReply r={};r.kind=STATUS_REPLY;r.sequence=pending;r.revision=pendingRevision;
-      r.wifi=WiFi.status()==WL_CONNECTED;r.clockReady=time(nullptr)>1700000000;
-      String base=apiUrl("/api/device?sequence=");
-      String url=base.length()?base+String(pending):String("");
-      if(!url.length())r.code=-1001;
-      if(r.wifi&&r.clockReady&&url.length()){
-        WiFiClientSecure client;client.setCACert(PACE_ROOT_CA);client.setHandshakeTimeout(4);
-        HTTPClient http;http.setConnectTimeout(3000);http.setTimeout(3000);
-        if(http.begin(client,url)){
-          const char* keys[]={"X-Encounter-Id","X-Encounter-State","X-Device-Status"};
-          http.collectHeaders(keys,3);http.addHeader("Authorization",String("Bearer ")+RELAY_TOKEN);
-          r.code=http.GET();
-          if(r.code==200){
-            String id=http.header("X-Encounter-Id"),value=http.getString();value.trim();
-            r.protocol=http.header("X-Device-Status")=="2"&&id.length()<=80;
-            r.active=http.header("X-Encounter-State")=="present"&&id.length()>0;
-            snprintf(r.encounter,sizeof(r.encounter),"%s",id.c_str());
-            snprintf(r.result,sizeof(r.result),"%s",value.c_str());
-            if(value=="success"||value=="failure"||value=="stale")pending=0;
-          }
-          http.end();
-        }
-      }
-      deliver(r);
-    }
-    vTaskDelay(pdMS_TO_TICKS(15));
+    if(awaitingAck&&now-postAt>=10000)acknowledge(-1011,0);
+    if(pending&&now-postAt>RESULT_MS+5000)pending=0;
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 
@@ -190,7 +209,7 @@ void completeGesture(unsigned long now) {
   if(xQueueSend(jobs,&job,0)!=pdTRUE)setPhase(SEND_ERROR);
 }
 
-// V2.8: native pixel graphics; diagnostics stay off the play screen.
+// V2.9: native pixel graphics; diagnostics stay off the play screen.
 bool visualError() {
   return phase==OFFLINE||phase==RESULT_TIMEOUT||phase==SYNC_ERROR||phase==SEND_ERROR||
     phase==IMU_ERROR||phase==UPDATE_API||phase==INIT_ERROR||phase==AUTH_ERROR;

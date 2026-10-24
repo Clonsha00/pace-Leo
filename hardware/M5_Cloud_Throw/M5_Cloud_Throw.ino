@@ -31,6 +31,52 @@ unsigned int throws = 0;
 float magnitude = 1.0f, peakG = 0, motionScore = 0;
 String statusText = "TAP A TO ARM";
 String networkText = "WiFi connecting";
+// StickC Plus red LED: GPIO10, active LOW (not the Plus2 pin).
+constexpr int RED_LED_PIN = 10;
+volatile int ledMode = 0; // 0 off, 1 waiting/blink, 2 captured/solid
+bool waitingResult = false;
+unsigned long pendingSequence = 0, waitingSince = 0, lastResultPoll = 0;
+
+void ledTask(void*) {
+  for (;;) {
+    const bool on = ledMode == 2 || (ledMode == 1 && (millis()/250)%2 == 0);
+    digitalWrite(RED_LED_PIN, on ? LOW : HIGH);
+    vTaskDelay(pdMS_TO_TICKS(25));
+  }
+}
+
+String resultUrl() {
+  String url(SERVER_URL);
+  const int suffix = url.indexOf("/api/throw");
+  if (suffix < 0) return String("");
+  return url.substring(0, suffix) + "/api/result?sequence=" + String(pendingSequence);
+}
+
+void checkResult() {
+  if (!waitingResult) return;
+  const unsigned long now = millis();
+  if (now-waitingSince >= 20000) {
+    waitingResult=false; ledMode=0; statusText="RESULT TIMEOUT"; return;
+  }
+  if (now-lastResultPoll < 1000 || WiFi.status()!=WL_CONNECTED) return;
+  lastResultPoll=now;
+  WiFiClientSecure client; client.setCACert(PACE_ROOT_CA);
+  HTTPClient http; http.setTimeout(2000);
+  String url=resultUrl();
+  if (!url.length() || !http.begin(client,url)) return;
+  http.addHeader("Authorization",String("Bearer ")+RELAY_TOKEN);
+  const int code=http.GET();
+  String result=code==200?http.getString():String(""); result.trim();
+  http.end();
+  if (millis()-waitingSince >= 20000) {
+    waitingResult=false; ledMode=0; statusText="RESULT TIMEOUT"; return;
+  }
+  if (result=="success" || result=="failure" || result=="stale") {
+    waitingResult=false;
+    ledMode=result=="success"?2:0;
+    statusText=result=="success"?"CAUGHT!":result=="failure"?"ESCAPED: TAP A":"STALE: TAP A";
+  }
+}
 
 void sendThrow(float peak, float score, unsigned long duration) {
   if (WiFi.status() != WL_CONNECTED) { networkText = "WiFi OFF"; return; }
@@ -42,10 +88,19 @@ void sendThrow(float peak, float score, unsigned long duration) {
   if (!http.begin(client, SERVER_URL)) { networkText = "HTTPS INIT FAIL"; return; }
   http.addHeader("Authorization", String("Bearer ") + RELAY_TOKEN);
   http.addHeader("Content-Type", "application/json");
+  const char* responseHeaders[] = {"X-Throw-Sequence"};
+  http.collectHeaders(responseHeaders,1);
   String body = "{\"event\":\"throw\",\"peak_g\":" + String(peak, 2)
     + ",\"motion_score\":" + String(score, 3)
     + ",\"duration_ms\":" + String(duration) + "}";
+  ledMode=1; // Flash while HTTPS submission and capture judgement are in progress.
   int code = http.POST(body);
+  const long receivedSequence = code==200?http.header("X-Throw-Sequence").toInt():0;
+  if (receivedSequence>0) {
+    pendingSequence=(unsigned long)receivedSequence;
+    waitingSince=millis(); lastResultPoll=waitingSince;
+    waitingResult=true; ledMode=1; statusText="WAIT RESULT";
+  } else { ledMode=0; if(code==200) statusText="UPDATE CLOUD API"; }
   Serial.printf("gesture: gyro %.1f strong_ms %lu\n", peakGyro, strongMs);
   networkText = (code == 200) ? "sent OK" : "HTTP " + String(code);
   Serial.printf("POST %d %s\n", code, body.c_str());
@@ -72,6 +127,8 @@ void completeGesture(unsigned long now) {
 
 void setup() {
   M5.begin(); Serial.begin(115200); M5.Imu.Init();
+  pinMode(RED_LED_PIN,OUTPUT); digitalWrite(RED_LED_PIN,HIGH);
+  xTaskCreate(ledTask,"pace-led",2048,nullptr,1,nullptr);
   M5.Lcd.setRotation(3);
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setTextColor(WHITE, BLACK);
@@ -79,13 +136,14 @@ void setup() {
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   configTime(0, 0, "pool.ntp.org", "time.google.com");
-  Serial.println("PACE cloud v2.3: tap A, release, wait READY, swing within 5s. Keep device secured.");
+  Serial.println("PACE cloud v2.4: blinking=waiting, solid=caught; tap A to start next throw.");
 }
 void loop() {
   M5.update();
   unsigned long now = millis();
   bool down = M5.BtnA.isPressed();
-  if (down && !previousDown && !armed && (!hadThrow || now-lastThrowAt >= COOLDOWN_MS)) {
+  if (down && !previousDown && !armed && !waitingResult && (!hadThrow || now-lastThrowAt >= COOLDOWN_MS)) {
+    ledMode=0;
     pressedAt = now;
     armed = true; released = false;
     consumed = false; settled = false; stillMs = strongMs = quietMs = 0; peakGyro = 0;
@@ -150,7 +208,7 @@ void loop() {
   if (now - lastDraw >= 150) {
     lastDraw=now;
     M5.Lcd.setTextSize(2);
-    M5.Lcd.setCursor(4,4); M5.Lcd.printf("PACE CLOUD V2.3   ");
+    M5.Lcd.setCursor(4,4); M5.Lcd.printf("PACE CLOUD V2.4   ");
     M5.Lcd.setCursor(4,32); M5.Lcd.printf("%-19s",statusText.c_str());
     M5.Lcd.setCursor(4,60); M5.Lcd.printf("Throws:%-8u",throws);
     M5.Lcd.setCursor(4,85); M5.Lcd.printf("Peak:%4.2fg        ",peakG);
@@ -158,5 +216,6 @@ void loop() {
     M5.Lcd.setCursor(4,112); M5.Lcd.printf("WiFi:%s    ",WiFi.status()==WL_CONNECTED?"OK":"OFF");
     M5.Lcd.setCursor(4,125); M5.Lcd.printf("%-28s",networkText.c_str());
   }
+  checkResult();
   delay(2);
 }

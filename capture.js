@@ -37,13 +37,15 @@
       if(game.appear(true))show();
     }
   };
-  function onThrow(event,simulated=false){
+  function onThrow(event,simulated=false,eventSequence=null){
     const result=game.throw(event);if(!result)return;
+    const feedbackToken=cloudMode&&!simulated&&Number.isSafeInteger(eventSequence)?el('relayToken').value.trim():null;
     if(simulated)result.demo=true;
     el('captureThrow').disabled=true;el('captureClose').disabled=true;el('captureSprite').textContent='🔴';
     el('captureResult').textContent=`投球中… 峰值 ${result.peak.toFixed(2)}g，捕捉率 ${Math.round(result.chance*100)}%（遊戲示範規則）`;
     setTimeout(()=>{
       if(!game.complete(result))return;
+      if(feedbackToken)reportResult(eventSequence,result.success,feedbackToken);
       el('captureClose').disabled=false;
       if(result.success){
         collection.push({species:'trail-buddy',name:'步道小夥伴',at:new Date().toISOString(),demo:result.demo});
@@ -52,6 +54,17 @@
         el('captureResult').textContent=`捕捉成功！${result.demo?'已加入測試收藏。':'已加入小夥伴收藏。'}${saved?'':'儲存失敗，收藏暫留本頁。'}關閉後按繼續運動。`;
       }else{el('captureSprite').textContent='🐾';el('captureResult').textContent='小夥伴掙脫了，再用 M5 投一次，或關閉後繼續運動。';el('captureThrow').disabled=false;}
     },700);
+  }
+  async function reportResult(eventSequence,success,token){
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const r=await fetch('/api/result',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sequence:eventSequence,success}),signal:AbortSignal.timeout(4000)});
+        if(r.ok)return;
+        if(r.status<500)break;
+      }catch{}
+      if(attempt<2)await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    status('捕捉結果已在手機顯示，但 M5 燈號回報失敗；請以手機結果為準。');
   }
   el('captureThrow').onclick=()=>onThrow({peak_g:2,motion_score:.45},true);
   function status(s){el('m5Status').textContent=s;el('captureSignal').textContent=s;}
@@ -89,7 +102,7 @@
           if(!game.encounter)status(`收到第 ${sequence} 球，目前沒有待捕捉角色。`);
           else if(game.busy)status(`收到第 ${sequence} 球，前一球仍在判定中。`);
           else if(!Number.isFinite(age)||age<0||age>5000||age>encounterAge+150)status(`收到第 ${sequence} 球，但事件已過期或早於角色出現，請重新投球。`);
-          else {status(`收到第 ${sequence} 球，正在捕捉。`);onThrow(d.event);}
+          else {status(`收到第 ${sequence} 球，正在捕捉。`);onThrow(d.event,false,sequence);}
         }
       }catch(e){if(enabled){sequence=null;connectionEpoch=null;status('接收中斷：'+e.message+'；重連後請再投一次。');}}
       finally{clearTimeout(timeout);controller=null;setTimeout(poll,750);}

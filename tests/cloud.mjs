@@ -18,6 +18,23 @@ assert.equal((await worker.fetch(req('/api/throw',{event:'throw',peak_g:2}),env)
 relay=new ThrowRelay({storage}); // object instance recreation retains saved sequence and event
 const last=await (await worker.fetch(req('/api/last'),env)).json();
 assert.equal(last.sequence,1);assert.equal(last.event.peak_g,2);assert.ok(last.now>=last.event.at);
+assert.equal(await (await worker.fetch(req('/api/result?sequence=1'),env)).text(),'pending');
+assert.equal((await worker.fetch(req('/api/result',{sequence:1,success:'yes'}),env)).status,400);
+assert.equal((await worker.fetch(req('/api/result',{sequence:2,success:true}),env)).status,409);
+assert.equal((await worker.fetch(req('/api/result',{sequence:1,success:true},'wrong'),env)).status,401);
+assert.equal((await worker.fetch(req('/api/result',{sequence:1,success:true}),env)).status,200);
+assert.equal((await worker.fetch(req('/api/result',{sequence:1,success:true}),env)).status,200);
+assert.equal((await worker.fetch(req('/api/result',{sequence:1,success:false}),env)).status,409);
+assert.equal(await (await worker.fetch(req('/api/result?sequence=1'),env)).text(),'success');
+memory.get('state').event.at-=1;
+const next=await worker.fetch(req('/api/throw',{event:'throw',peak_g:3}),env);
+assert.equal(next.headers.get('X-Throw-Sequence'),'2');
+assert.equal(await (await worker.fetch(req('/api/result?sequence=1'),env)).text(),'stale');
+assert.equal(await (await worker.fetch(req('/api/result?sequence=2'),env)).text(),'pending');
+assert.equal((await worker.fetch(req('/api/result',{sequence:2,success:false}),env)).status,200);
+assert.equal(await (await worker.fetch(req('/api/result?sequence=2'),env)).text(),'failure');
+memory.get('state').event.at-=31;
+assert.equal((await worker.fetch(req('/api/result',{sequence:2,success:false}),env)).status,410);
 assert.equal((await worker.fetch(req('/api/throw',{event:'throw',padding:'x'.repeat(1100)}),env)).status,413);
 assert.equal((await worker.fetch(req('/api/missing'),env)).status,404);
 assert.equal((await worker.fetch(req('/api/last',{}),env)).status,405);

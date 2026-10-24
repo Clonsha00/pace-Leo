@@ -1,5 +1,6 @@
 'use strict';
 (()=>{
+  const CAPTURE_WAIT_MS=3000;
   const el=id=>document.getElementById(id),game=new CaptureGame(),key='pace-companions-v1';
   const distanceTest=new CaptureGame();let testMeters=0;
   let collection=[],enabled=false,controller=null,connectionEpoch=null,sequence=null,cloudMode=false;
@@ -126,7 +127,7 @@
         renderCollection();el('captureSprite').textContent='✨';
         el('captureResult').textContent=`捕捉成功！${result.demo?'已加入測試收藏。':'已加入小夥伴收藏。'}${saved?'':'儲存失敗，收藏暫留本頁。'}關閉後按繼續運動。`;
       }else{el('captureSprite').textContent='🐾';el('captureResult').textContent='小夥伴掙脫了，再用 M5 投一次，或關閉後繼續運動。';el('captureThrow').disabled=false;}
-    },700);
+    },CAPTURE_WAIT_MS);
   }
   async function reportResult(eventSequence,success,token,generation){
     for(let attempt=0;attempt<3;attempt++){
